@@ -1,0 +1,189 @@
+# ============================================================
+# X-Ray Object Detection — Default Configuration
+# AI/ML-Based Dual-Model Property-Based Detection System
+# ============================================================
+
+project:
+  name: "xray-object-detection"
+  version: "0.1.0"
+
+# --- Paths ---
+paths:
+  data_root: "data"
+  raw_data: "data/raw"
+  processed_data: "data/processed"
+  annotations: "data/annotations"
+  checkpoints: "checkpoints"
+  results: "results"
+  # Google Drive paths (used in Colab)
+  drive_root: "/content/drive/MyDrive/xray_detection"
+  drive_data: "/content/drive/MyDrive/xray_detection/data"
+  drive_checkpoints: "/content/drive/MyDrive/xray_detection/checkpoints"
+
+# --- Dataset ---
+dataset:
+  name: "sixray"  # Options: sixray, opixray, hixray, custom
+  image_size: 640
+  num_workers: 4
+  pin_memory: true
+  # Train/Val/Test split ratios
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+  # Class names
+  threat_classes:
+    - "gun"
+    - "knife"
+    - "wrench"
+    - "pliers"
+    - "scissors"
+  benign_classes:
+    - "non-threat"
+
+# --- Property Schema (10 + 1 occlusion) ---
+property_schema:
+  num_properties: 11  # 10 core + 1 occlusion score
+  properties:
+    - name: "edge_sharpness"
+      type: "float"
+      range: [0.0, 1.0]
+      description: "Canny edge detection density on object mask"
+    - name: "length_to_width_ratio"
+      type: "float"
+      range: [0.0, 10.0]
+      description: "Bounding box aspect ratio"
+    - name: "symmetry_score"
+      type: "float"
+      range: [0.0, 1.0]
+      description: "Axis-aligned pixel distribution comparison"
+    - name: "curvature_index"
+      type: "float"
+      range: [0.0, 1.0]
+      description: "Contour curvature analysis"
+    - name: "approximate_volume"
+      type: "float"
+      range: [0.0, 1.0]
+      description: "Pixel area × opacity-estimated depth (normalized)"
+    - name: "material_category"
+      type: "categorical"
+      num_classes: 4
+      classes: ["organic", "metallic", "mixed", "opaque"]
+      description: "Dual-energy HE/LE channel analysis"
+    - name: "avg_absorption_intensity"
+      type: "float"
+      range: [0.0, 1.0]
+      description: "Mean pixel value in grayscale channel"
+    - name: "material_homogeneity"
+      type: "float"
+      range: [0.0, 1.0]
+      description: "Std deviation of absorption across object"
+    - name: "density_level"
+      type: "float"
+      range: [0.0, 1.0]
+      description: "Weighted HE+LE intensity ratio"
+    - name: "sharp_edge_count"
+      type: "integer"
+      range: [0, 20]
+      description: "Harris / Shi-Tomasi corner detection count"
+    - name: "occlusion_score"
+      type: "float"
+      range: [0.0, 1.0]
+      description: "Fraction of bbox covered by overlapping objects"
+
+# --- Preprocessing ---
+preprocessing:
+  # Bilateral filter
+  bilateral:
+    d: 9
+    sigma_color: 75
+    sigma_space: 75
+  # CLAHE
+  clahe:
+    clip_limit: 2.0
+    tile_grid_size: [8, 8]
+  # Letterbox resize
+  target_size: 640
+  # Input channels
+  num_channels: 4  # -log(HE), -log(LE), HE+LE, HE-LE
+
+# --- Augmentation ---
+augmentation:
+  # Geometric
+  horizontal_flip_prob: 0.5
+  rotation_limit: 30
+  scale_range: [0.8, 1.2]
+  elastic_transform: true
+  # Photometric
+  brightness_contrast_limit: 0.15
+  gauss_noise_var_limit: [10.0, 50.0]
+  random_gamma: true
+  # X-ray specific
+  cutmix_prob: 0.3
+
+# --- Model 1: Property Extraction (YOLOv8 + Property Head) ---
+model1:
+  # Backbone
+  backbone: "yolov8m"  # Options: yolov8n, yolov8s, yolov8m, yolov8l, yolov8x
+  pretrained: true  # Use COCO pretrained weights
+  input_channels: 4  # Must match preprocessing.num_channels
+
+  # Property Regression Head
+  property_head:
+    hidden_dims: [512, 256]
+    num_outputs: 10  # Continuous properties (material_category handled separately)
+    activation: "relu"
+    batch_norm: true
+    dropout: 0.1
+
+  # Material Classification Branch
+  material_branch:
+    enabled: true
+    num_classes: 4  # organic, metallic, mixed, opaque
+
+  # Stage 1: Detection training
+  stage1:
+    epochs: 100
+    batch_size: 16
+    learning_rate: 0.01
+    optimizer: "SGD"
+    momentum: 0.937
+    weight_decay: 0.0005
+    warmup_epochs: 3
+    scheduler: "cosine"
+
+  # Stage 2: Property regression training
+  stage2:
+    epochs: 50
+    batch_size: 16
+    learning_rate: 0.001
+    optimizer: "Adam"
+    weight_decay: 0.0001
+    freeze_backbone: true
+    scheduler: "cosine"
+
+  # Loss configuration
+  loss:
+    uncertainty_weighting: true  # Kendall et al. 2018
+    gradient_clip_max_norm: 1.0
+    property_loss: "mse"  # MSE for continuous properties
+    material_loss: "cross_entropy"
+    focal_loss:
+      gamma: 2.0
+      alpha: 0.25
+
+# --- Evaluation Targets ---
+evaluation:
+  detection:
+    map50_target: 0.90
+    map50_95_target: 0.70
+  property:
+    mae_target: 0.10
+    rmse_target: 0.15
+  material:
+    accuracy_target: 0.92
+
+# --- Wandb ---
+wandb:
+  enabled: false  # Set to true to enable experiment tracking
+  project: "xray-detection"
+  entity: null  # Your W&B username
