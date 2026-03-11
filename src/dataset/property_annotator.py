@@ -333,10 +333,10 @@ class PropertyAnnotator:
             iy2 = min(y2, oy2)
 
             if ix1 < ix2 and iy1 < iy2:
-                intersection = (ix2 - ix1) * (iy2 - iy1)
+                intersection = float((ix2 - ix1) * (iy2 - iy1))
                 total_overlap += intersection
 
-        return float(np.clip(total_overlap / bbox_area, 0.0, 1.0))
+        return float(np.clip(total_overlap / float(bbox_area), 0.0, 1.0))
 
 
 def batch_annotate(
