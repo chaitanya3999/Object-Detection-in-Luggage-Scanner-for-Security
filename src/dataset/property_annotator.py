@@ -18,6 +18,7 @@ Property Schema (10 + 1 occlusion):
  10. Occlusion Score             (float, 0-1)
 """
 
+import os
 import cv2
 import numpy as np
 from typing import List, Dict, Tuple, Optional
@@ -416,7 +417,3 @@ def batch_annotate(
     df.to_csv(output_csv, index=False)
     print(f"✓ Saved {len(records)} property annotations to {output_csv}")
     return df
-
-
-# Required for batch_annotate
-import os
