@@ -176,23 +176,46 @@ class PropertyYOLO(nn.Module):
         self.training_stage = 1  # 1 = detection, 2 = property regression
 
     def _init_yolo(self, model_size: str, num_classes: int, pretrained: bool, input_channels: int):
-        """Initialize the Ultralytics YOLOv8 model."""
+        """Initialize the Ultralytics YOLOv8 model natively with 4-channels to prevent reset bugs."""
         from ultralytics import YOLO
+        import ultralytics
+        from pathlib import Path
+        import yaml
+        
+        # If input channels is 3, just use standard loading
+        if input_channels == 3:
+            self.yolo = YOLO(f"{model_size}.pt" if pretrained else f"{model_size}.yaml")
+            return
 
-        # Load pretrained model
-        if pretrained:
-            self.yolo = YOLO(f"{model_size}.pt")
+        # For 4 channels, we dynamically create a custom yaml architecture
+        # so YOLO's internal .train() method doesn't panic and download COCO
+        base_yaml = f"{model_size.replace('yolov8', '')}.yaml"
+        yaml_path = Path(ultralytics.__file__).parent / "cfg" / "models" / "v8" / "yolov8.yaml"
+        
+        custom_yaml_path = f"custom_4ch_{model_size}.yaml"
+        
+        # Create the custom configuration
+        if yaml_path.exists():
+            with open(yaml_path, "r") as f:
+                d = yaml.safe_load(f)
+            d["ch"] = input_channels
+            d["nc"] = num_classes
+            with open(custom_yaml_path, "w") as f:
+                yaml.dump(d, f)
+            # Initialize from custom YAML so the backbone is permanently 4 channels
+            self.yolo = YOLO(custom_yaml_path)
         else:
+            # Fallback if standard yaml is surprisingly missing
             self.yolo = YOLO(f"{model_size}.yaml")
-
-        # Modify first conv layer for 4-channel input if needed
-        if input_channels != 3:
             self._modify_input_channels(input_channels)
+
+        # Load pretrained weights into the new 4-channel model
+        if pretrained:
+            self.yolo.load(f"{model_size}.pt")
 
     def _modify_input_channels(self, new_channels: int):
         """
-        Modify the first convolutional layer to accept a different number
-        of input channels while preserving pretrained weights where possible.
+        Fallback method: Modify the first convolutional layer inline.
         """
         model = self.yolo.model
 
