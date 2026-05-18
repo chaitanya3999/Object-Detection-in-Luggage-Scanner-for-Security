@@ -25,7 +25,7 @@ class PropertyRegressionHead(nn.Module):
         self,
         input_dim: int = 512,
         hidden_dims: List[int] = [512, 256],
-        num_properties: int = 10,
+        num_properties: int = 11,
         dropout: float = 0.1,
     ):
         super().__init__()
@@ -73,7 +73,9 @@ class PropertyRegressionHead(nn.Module):
         props_bounded2 = torch.sigmoid(props[:, 6:9])
         props_count = torch.relu(props[:, 9:10])  # Non-negative integer count
 
-        return torch.cat([props_bounded, props_material, props_bounded2, props_count], dim=1)
+        props_11 = torch.sigmoid(props[:, 10:11])  # Occlusion score is bounded [0,1]
+
+        return torch.cat([props_bounded, props_material, props_bounded2, props_count, props_11], dim=1)
 
 
 class MaterialClassificationBranch(nn.Module):
@@ -135,9 +137,10 @@ class PropertyYOLO(nn.Module):
         self,
         model_size: str = "yolov8m",
         num_classes: int = 6,
-        num_properties: int = 10,
+        num_properties: int = 11,  # CHANGED to 11
         input_channels: int = 4,
         pretrained: bool = True,
+        weights_path: str = "weights/yolov8_xray_stage1_final.pt",  # ADDED Stage 1 weights path
         property_head_dims: List[int] = [512, 256],
         property_dropout: float = 0.1,
         material_branch: bool = True,
@@ -150,8 +153,8 @@ class PropertyYOLO(nn.Module):
         self.input_channels = input_channels
         self.material_branch_enabled = material_branch
 
-        # Initialize YOLOv8 backbone
-        self._init_yolo(model_size, num_classes, pretrained, input_channels)
+        # CHANGED: Pass weights_path to _init_yolo
+        self._init_yolo(model_size, num_classes, pretrained, input_channels, weights_path)
 
         # Determine backbone feature dimension
         self.backbone_dim = self._get_backbone_dim()
@@ -175,7 +178,7 @@ class PropertyYOLO(nn.Module):
         # Stage tracking
         self.training_stage = 1  # 1 = detection, 2 = property regression
 
-    def _init_yolo(self, model_size: str, num_classes: int, pretrained: bool, input_channels: int):
+    def _init_yolo(self, model_size: str, num_classes: int, pretrained: bool, input_channels: int, weights_path: str):
         """Initialize the Ultralytics YOLOv8 model natively with 4-channels to prevent reset bugs."""
         from ultralytics import YOLO
         import ultralytics
@@ -210,8 +213,9 @@ class PropertyYOLO(nn.Module):
             self._modify_input_channels(input_channels)
 
         # Load pretrained weights into the new 4-channel model
-        if pretrained:
-            self.yolo.load(f"{model_size}.pt")
+        if pretrained and weights_path:
+            print(f"Loading Stage 1 weights from {weights_path}...")
+            self.yolo.load(weights_path)
 
     def _modify_input_channels(self, new_channels: int):
         """

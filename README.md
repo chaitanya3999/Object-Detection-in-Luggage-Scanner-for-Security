@@ -73,7 +73,7 @@ This decoupled design enables **scalable threat detection** — new threat types
 
 3. **Run demo** (after training):
    ```bash
-   python scripts/property_extraction_demo.py --image sample.jpg --checkpoint checkpoints/stage2_best.pth
+   python scripts/property_extraction_demo.py --image sample.jpg --checkpoint weights/stage2_best.pt
    ```
 
 ## Datasets

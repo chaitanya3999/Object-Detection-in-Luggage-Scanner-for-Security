@@ -184,6 +184,6 @@ evaluation:
 
 # --- Wandb ---
 wandb:
-  enabled: false  # Set to true to enable experiment tracking
+  enabled: true  # Set to true to enable experiment tracking
   project: "xray-detection"
   entity: null  # Your W&B username

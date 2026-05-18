@@ -60,7 +60,7 @@ class Trainer:
             self.model = PropertyYOLO(
                 model_size=model_cfg.get("backbone", "yolov8m"),
                 num_classes=len(config.get("dataset", {}).get("threat_classes", ["threat"])) + 1,
-                num_properties=model_cfg.get("property_head", {}).get("num_outputs", 10),
+                num_properties=model_cfg.get("property_head", {}).get("num_outputs", 11),
                 input_channels=model_cfg.get("input_channels", 4),
                 pretrained=model_cfg.get("pretrained", True),
                 property_head_dims=model_cfg.get("property_head", {}).get("hidden_dims", [512, 256]),

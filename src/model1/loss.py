@@ -84,7 +84,7 @@ class MultiTaskLoss(nn.Module):
 
     def __init__(
         self,
-        num_properties: int = 10,
+        num_properties: int = 11,
         num_materials: int = 4,
         use_uncertainty_weighting: bool = True,
         use_focal_loss: bool = True,
@@ -160,8 +160,8 @@ class MultiTaskLoss(nn.Module):
 
             if pred_props.shape[0] > 0 and gt_props.shape[0] > 0:
                 # Separate continuous and categorical properties
-                # Continuous: indices 0-4, 6-8, 9  |  Categorical: index 5
-                continuous_idx = [0, 1, 2, 3, 4, 6, 7, 8, 9]
+                # Continuous: indices 0-4, 6-8, 9, 10  |  Categorical: index 5
+                continuous_idx = [0, 1, 2, 3, 4, 6, 7, 8, 9, 10]
                 cat_idx = 5
 
                 prop_loss = self.property_loss_fn(
