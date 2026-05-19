@@ -123,3 +123,28 @@ class PropertyYOLO(nn.Module):
 
     def get_trainable_params(self): return [p for p in self.parameters() if p.requires_grad]
     def set_training_stage(self, stage): pass # Handled by train() override now
+
+    def save_checkpoint(self, path: str, epoch: int, optimizer=None, metrics=None):
+        checkpoint = {
+            "epoch": epoch, "model_state_dict": self.state_dict(),
+            "num_properties": self.num_properties, "num_classes": self.num_classes,
+            "input_channels": self.input_channels, "training_stage": getattr(self, "training_stage", 2),
+        }
+        if optimizer: checkpoint["optimizer_state_dict"] = optimizer.state_dict()
+        if metrics: checkpoint["metrics"] = metrics
+        import torch
+        torch.save(checkpoint, path)
+        print(f"✓ Checkpoint saved: {path}")
+
+    @classmethod
+    def load_checkpoint(cls, path: str, device: str = "cpu") -> "PropertyYOLO":
+        import torch
+        checkpoint = torch.load(path, map_location=device)
+        model = cls(
+            num_properties=checkpoint.get("num_properties", 11),
+            num_classes=checkpoint.get("num_classes", 6),
+            input_channels=checkpoint.get("input_channels", 4),
+        )
+        model.load_state_dict(checkpoint["model_state_dict"])
+        model.training_stage = checkpoint.get("training_stage", 1)
+        return model
