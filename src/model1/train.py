@@ -295,27 +295,23 @@ class Trainer:
         return total_loss / max(num_batches, 1)
 
     @torch.no_grad()
+    @torch.no_grad()
     def _validate_epoch_stage2(self, val_loader, epoch: int) -> float:
-        """Validate one epoch for property regression."""
         self.model.eval()
-        total_loss = 0.0
-        num_batches = 0
+        total_loss, num_batches = 0.0, 0
 
         for batch in val_loader:
             images = batch["image"].to(self.device)
-            properties = batch["properties"]
-            gt_properties = torch.cat([p for p in properties if len(p) > 0], dim=0)
+            # Pass the bounding boxes!
+            boxes = [b.to(self.device) for b in batch["boxes"]]
+            gt_properties = torch.cat([p for p in batch["properties"] if len(p) > 0], dim=0).to(self.device)
 
-            if len(gt_properties) == 0:
-                continue
+            if len(gt_properties) == 0: continue
 
-            gt_properties = gt_properties.to(self.device)
-
-            predictions = self.model.forward_properties(images)
+            # Include boxes=boxes here just like in the training loop
+            predictions = self.model.forward_properties(images, boxes=boxes)
             targets = {"properties": gt_properties}
-
-            if "material_logits" in predictions:
-                targets["material_labels"] = gt_properties[:, 5].long()
+            if "material_logits" in predictions: targets["material_labels"] = gt_properties[:, 5].long()
 
             loss, _ = self.criterion(predictions, targets)
             total_loss += loss.item()
