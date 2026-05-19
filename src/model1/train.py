@@ -245,52 +245,52 @@ class Trainer:
         print(f"✓ Stage 2 complete. Best val loss: {best_val_loss:.4f}")
 
     def _train_epoch_stage2(self, train_loader, optimizer, epoch: int) -> float:
-        """Train one epoch for property regression."""
         self.model.train()
-        total_loss = 0.0
-        num_batches = 0
+        total_loss, num_batches = 0.0, 0
 
         for batch_idx, batch in enumerate(train_loader):
             images = batch["image"].to(self.device)
-            properties = batch["properties"]
-            # Flatten properties for all objects in the batch
-            gt_properties = torch.cat([p for p in properties if len(p) > 0], dim=0)
+            boxes = [b.to(self.device) for b in batch["boxes"]]
+            gt_properties = torch.cat([p for p in batch["properties"] if len(p) > 0], dim=0).to(self.device)
 
-            if len(gt_properties) == 0:
-                continue
+            if len(gt_properties) == 0: continue
 
-            gt_properties = gt_properties.to(self.device)
-
-            # Forward pass
-            predictions = self.model.forward_properties(images)
-
-            # Compute property regression loss
+            # Pass boxes to the ROI Align head!
+            predictions = self.model.forward_properties(images, boxes=boxes)
             targets = {"properties": gt_properties}
-
-            # Material labels (from property index 5)
-            if "material_logits" in predictions:
-                material_labels = gt_properties[:, 5].long()
-                targets["material_labels"] = material_labels
+            if "material_logits" in predictions: targets["material_labels"] = gt_properties[:, 5].long()
 
             loss, loss_dict = self.criterion(predictions, targets)
-
-            # Backward pass
             optimizer.zero_grad()
             loss.backward()
-
-            # Gradient clipping
-            nn.utils.clip_grad_norm_(
-                self.model.get_trainable_params(),
-                max_norm=self.gradient_clip,
-            )
-
+            torch.nn.utils.clip_grad_norm_(self.model.get_trainable_params(), max_norm=self.gradient_clip)
             optimizer.step()
 
             total_loss += loss.item()
             num_batches += 1
+            if batch_idx % 50 == 0: print(f"    Batch {batch_idx} | Loss: {loss.item():.4f}")
 
-            if batch_idx % 50 == 0:
-                print(f"    Batch {batch_idx} | Loss: {loss.item():.4f}")
+        return total_loss / max(num_batches, 1)
+
+    @torch.no_grad()
+    def _validate_epoch_stage2(self, val_loader, epoch: int) -> float:
+        self.model.eval()
+        total_loss, num_batches = 0.0, 0
+
+        for batch in val_loader:
+            images = batch["image"].to(self.device)
+            boxes = [b.to(self.device) for b in batch["boxes"]]
+            gt_properties = torch.cat([p for p in batch["properties"] if len(p) > 0], dim=0).to(self.device)
+
+            if len(gt_properties) == 0: continue
+
+            predictions = self.model.forward_properties(images, boxes=boxes)
+            targets = {"properties": gt_properties}
+            if "material_logits" in predictions: targets["material_labels"] = gt_properties[:, 5].long()
+
+            loss, _ = self.criterion(predictions, targets)
+            total_loss += loss.item()
+            num_batches += 1
 
         return total_loss / max(num_batches, 1)
 
