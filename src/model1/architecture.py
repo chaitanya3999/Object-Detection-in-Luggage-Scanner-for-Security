@@ -66,7 +66,7 @@ class PropertyYOLO(nn.Module):
         self.num_properties, self.num_classes, self.input_channels = num_properties, num_classes, input_channels
         self._init_yolo(model_size, num_classes, pretrained, input_channels, weights_path)
         
-        self.property_head = PropertyRegressionHead(in_channels=512, output_dim=num_properties)
+        self.property_head = PropertyRegressionHead(in_channels=192, output_dim=num_properties)
         self.material_branch = MaterialClassificationBranch(input_channels=1, num_classes=4)
         self.training_stage = 1 
 
