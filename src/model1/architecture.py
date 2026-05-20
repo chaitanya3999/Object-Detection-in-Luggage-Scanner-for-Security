@@ -64,11 +64,13 @@ class PropertyYOLO(nn.Module):
     def __init__(self, model_size="yolov8m", num_classes=6, num_properties=11, input_channels=4, pretrained=True, weights_path=None):
         super().__init__()
         self.num_properties, self.num_classes, self.input_channels = num_properties, num_classes, input_channels
+        
+        # Pass weights_path down to the YOLO initializer
         self._init_yolo(model_size, num_classes, pretrained, input_channels, weights_path)
         
         self.property_head = PropertyRegressionHead(in_channels=192, output_dim=num_properties)
         self.material_branch = MaterialClassificationBranch(input_channels=1, num_classes=4)
-        self.training_stage = 1 
+        self.training_stage = 1
 
     def train(self, mode: bool = True):
         self.training = mode
@@ -102,8 +104,10 @@ class PropertyYOLO(nn.Module):
             d["ch"], d["nc"] = input_channels, num_classes
             with open(custom_yaml_path, "w") as f: yaml.dump(d, f)
             self.yolo = YOLO(custom_yaml_path)
-        
-        if pretrained and weights_path: self.yolo.load(weights_path)
+            
+        # ✅ THE MISSING LINE: Actually load the weights if provided!
+        if pretrained and weights_path:
+            self.yolo.load(weights_path)
 
     def extract_features(self, images: torch.Tensor) -> torch.Tensor:
         y, x = [], images
