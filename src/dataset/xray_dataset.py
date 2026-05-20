@@ -8,6 +8,7 @@ import cv2
 import torch
 import numpy as np
 import pandas as pd
+import random
 from torch.utils.data import Dataset
 from typing import Optional, Callable, Dict, List, Tuple
 
@@ -17,7 +18,8 @@ class XRayDataset(Dataset):
     PyTorch Dataset for X-Ray security scanner images.
 
     Loads images with bounding box annotations (YOLO format) and
-    optional property vector labels.
+    optional property vector labels. If property vectors are missing,
+    synthetic physics properties are generated based on class and box dimensions.
 
     Args:
         image_dir: Path to directory containing images.
@@ -76,7 +78,7 @@ class XRayDataset(Dataset):
             - 'image': Tensor (C, H, W)
             - 'boxes': Tensor (N, 4) in xyxy format
             - 'labels': Tensor (N,) class IDs
-            - 'properties': Tensor (N, num_properties) if property data available
+            - 'properties': Tensor (N, num_properties)
             - 'image_path': str
         """
         img_path = self.image_paths[idx]
@@ -92,8 +94,8 @@ class XRayDataset(Dataset):
         # Load YOLO-format labels
         boxes, labels = self._load_labels(img_path, orig_h, orig_w)
 
-        # Load property vectors
-        properties = self._load_properties(img_path, len(boxes))
+        # Load property vectors (or generate synthetic ones if missing)
+        properties = self._load_properties(img_path, boxes, labels)
 
         # Apply augmentation/transform
         if self.transform is not None:
@@ -134,7 +136,6 @@ class XRayDataset(Dataset):
         self, img_path: str, img_h: int, img_w: int
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Load YOLO-format bounding box labels."""
-        # Determine label file path
         img_basename = os.path.splitext(os.path.basename(img_path))[0]
 
         label_path = None
@@ -166,41 +167,82 @@ class XRayDataset(Dataset):
 
         return np.array(boxes, dtype=np.float32).reshape(-1, 4), np.array(labels, dtype=np.int64)
 
+    def _generate_synthetic_physics(self, class_id: int, box_w: float, box_h: float) -> np.ndarray:
+        """Generates realistic physical property numbers based on object class and box size."""
+        # Default baselines
+        density = random.uniform(0.7, 0.9)     
+        sharpness = random.uniform(0.1, 0.5)
+        symmetry = random.uniform(0.4, 0.8)
+        lw_ratio = box_h / max(box_w, 1.0)     
+        curvature = random.uniform(0.1, 0.5)
+        material_id = 3.0  # Default: Heavy/Dense Metal
+        
+        # Class-specific physics overrides
+        if class_id == 0: # Gun
+            density = random.uniform(0.85, 0.98)
+            sharpness = random.uniform(0.1, 0.3) 
+            symmetry = random.uniform(0.2, 0.5)  
+            material_id = 3.0 
+        elif class_id == 1: # Knife
+            density = random.uniform(0.75, 0.9)
+            sharpness = random.uniform(0.85, 1.0) 
+            symmetry = random.uniform(0.8, 0.95)
+            material_id = 2.0 
+        elif class_id in [2, 3]: # Wrench / Pliers
+            density = random.uniform(0.8, 0.95)
+            sharpness = random.uniform(0.2, 0.4)
+            symmetry = random.uniform(0.7, 0.9)
+        elif class_id == 4: # Scissors
+            sharpness = random.uniform(0.7, 0.9)
+            symmetry = random.uniform(0.8, 0.9)
+            material_id = 2.0
+            
+        occlusion = random.uniform(0.0, 0.9)
+
+        # Target layout: [density, sharpness, symmetry, lw_ratio, curvature, material_id, 0, 0, 0, 0, occlusion]
+        props = [density, sharpness, symmetry, lw_ratio, curvature, material_id, 0.0, 0.0, 0.0, 0.0, occlusion]
+        
+        return np.array(props, dtype=np.float32)
+
     def _load_properties(
-        self, img_path: str, num_objects: int
+        self, img_path: str, boxes: np.ndarray, labels: np.ndarray
     ) -> np.ndarray:
-        """Load property vectors for objects in this image."""
-        if self.property_data is None or num_objects == 0:
-            return np.zeros((max(num_objects, 0), self.num_properties), dtype=np.float32)
+        """Load property vectors, or synthesize them if CSV data is missing/empty."""
+        num_objects = len(boxes)
+        if num_objects == 0:
+            return np.zeros((0, self.num_properties), dtype=np.float32)
 
-        # Match by image path
-        img_props = self.property_data[
-            self.property_data["image_path"] == img_path
-        ]
+        properties = None
 
-        if len(img_props) == 0:
-            return np.zeros((num_objects, self.num_properties), dtype=np.float32)
+        # 1. Attempt to load from CSV
+        if self.property_data is not None:
+            img_props = self.property_data[self.property_data["image_path"] == img_path]
+            if len(img_props) > 0:
+                prop_columns = [
+                    "edge_sharpness", "length_to_width_ratio", "symmetry_score",
+                    "curvature_index", "approximate_volume", "material_category",
+                    "avg_absorption_intensity", "material_homogeneity",
+                    "density_level", "sharp_edge_count", "occlusion_score",
+                ]
+                available_cols = [c for c in prop_columns if c in img_props.columns]
+                if available_cols:
+                    properties = img_props[available_cols].values.astype(np.float32)
+                    
+                    # Pad or trim to match num_objects
+                    if len(properties) < num_objects:
+                        pad = np.zeros((num_objects - len(properties), properties.shape[1]), dtype=np.float32)
+                        properties = np.vstack([properties, pad])
+                    elif len(properties) > num_objects:
+                        properties = properties[:num_objects]
 
-        # Extract property columns
-        prop_columns = [
-            "edge_sharpness", "length_to_width_ratio", "symmetry_score",
-            "curvature_index", "approximate_volume", "material_category",
-            "avg_absorption_intensity", "material_homogeneity",
-            "density_level", "sharp_edge_count", "occlusion_score",
-        ]
-
-        available_cols = [c for c in prop_columns if c in img_props.columns]
-        if available_cols:
-            properties = img_props[available_cols].values.astype(np.float32)
-        else:
-            properties = np.zeros((len(img_props), self.num_properties), dtype=np.float32)
-
-        # Pad or trim to match num_objects
-        if len(properties) < num_objects:
-            pad = np.zeros((num_objects - len(properties), properties.shape[1]), dtype=np.float32)
-            properties = np.vstack([properties, pad])
-        elif len(properties) > num_objects:
-            properties = properties[:num_objects]
+        # 2. Fallback: If properties are missing, or entirely zeros, generate synthetic physics!
+        if properties is None or np.all(properties == 0):
+            properties = np.zeros((num_objects, self.num_properties), dtype=np.float32)
+            for i in range(num_objects):
+                class_id = int(labels[i])
+                box_w = abs(boxes[i][2] - boxes[i][0])
+                box_h = abs(boxes[i][3] - boxes[i][1])
+                properties[i] = self._generate_synthetic_physics(class_id, box_w, box_h)
 
         return properties
 
