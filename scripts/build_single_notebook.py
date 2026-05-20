@@ -197,6 +197,20 @@ nb.cells.append(new_code_cell(
     "stage2_results = trainer.train_stage2(train_loader=train_loader, val_loader=val_loader)\n"
 ))
 
+nb.cells.append(new_code_cell(
+    "# 7. Generate Model 2 Dataset (Threats + Benign Background)\n"
+    "print('\\nGenerating Model 2 Dataset...')\n"
+    "!python src/model2/prepare_dataset.py\n"
+))
+
+nb.cells.append(new_code_cell(
+    "# 8. Train Model 2 (Explainable Classifier)\n"
+    "print('\\nTraining Model 2 (Random Forest)...')\n"
+    "!pip install scikit-learn pandas xgboost\n"
+    "!python src/model2/train.py --model rf\n"
+    "print('\\n✅ Dual-Model Training Complete! Checkpoints saved to checkpoints/')\n"
+))
+
 with open('notebooks/standalone_colab.ipynb', 'w') as f:
     nbformat.write(nb, f)
 

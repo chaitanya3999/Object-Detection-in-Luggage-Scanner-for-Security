@@ -1,0 +1,482 @@
+:root {
+  /* Curated Cyber-Security Theme Palette */
+  --bg-main: #070a13;
+  --bg-panel: #0a0e1a;
+  --bg-card: rgba(18, 24, 43, 0.65);
+  --bg-card-hover: rgba(28, 38, 68, 0.8);
+  
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-color-glow: rgba(56, 189, 248, 0.3);
+  
+  /* Dual-Energy Material Gradients */
+  --color-organic: #f97316; /* Orange - clothing, food, explosives */
+  --color-organic-glow: rgba(249, 115, 22, 0.25);
+  
+  --color-metallic: #3b82f6; /* Blue - metal guns, knives, tools */
+  --color-metallic-glow: rgba(59, 130, 246, 0.25);
+  
+  --color-mixed: #22c55e; /* Green - aluminum, glass, light metals */
+  --color-mixed-glow: rgba(34, 197, 94, 0.25);
+  
+  --color-opaque: #94a3b8; /* Gray/Black - heavy metals, lead shields */
+  --color-opaque-glow: rgba(148, 163, 184, 0.25);
+  
+  /* Threat Level Indicator Colors */
+  --color-safe: #10b981;
+  --color-warning: #f59e0b;
+  --color-critical: #ef4444;
+  --color-critical-glow: rgba(239, 68, 68, 0.4);
+  
+  /* Text and Accents */
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent-cyan: #38bdf8;
+  --accent-glow: rgba(56, 189, 248, 0.15);
+  
+  /* Geometry styling */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  
+  --shadow-main: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  --transition-fast: 0.2s ease;
+  --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Base Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  font-family: 'Outfit', sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-main);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Glassmorphism Classes */
+.glass-panel {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-main);
+  transition: border-color var(--transition-normal), transform var(--transition-normal);
+}
+
+.glass-panel:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.glass-panel-glow {
+  background: var(--bg-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-color-glow);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 20px 0 var(--accent-glow), var(--shadow-main);
+}
+
+/* Animations */
+@keyframes pulseGlow {
+  0% {
+    box-shadow: 0 0 10px 0 rgba(239, 68, 68, 0.2), var(--shadow-main);
+  }
+  50% {
+    box-shadow: 0 0 25px 5px rgba(239, 68, 68, 0.45), var(--shadow-main);
+  }
+  100% {
+    box-shadow: 0 0 10px 0 rgba(239, 68, 68, 0.2), var(--shadow-main);
+  }
+}
+
+.pulse-critical {
+  animation: pulseGlow 2s infinite ease-in-out;
+  border-color: var(--color-critical) !important;
+}
+
+@keyframes conveyorBelt {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 40px 0;
+  }
+}
+
+.conveyor-animation {
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.03) 50%, rgba(255, 255, 255, 0.03) 75%, transparent 75%, transparent);
+  background-size: 40px 40px;
+  animation: conveyorBelt 1.5s linear infinite;
+}
+
+/* Grid & Layout Utilities */
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.content-area {
+  flex: 1;
+  padding: 1.5rem 2rem;
+  max-width: 1600px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Tabs Navigation */
+.tabs-nav {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  background: rgba(18, 24, 43, 0.4);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 2rem;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all var(--transition-fast);
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tab-btn.active {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+/* Operator Live Feed */
+.bag-queue-belt {
+  height: 140px;
+  background: #0f1424;
+  border: 2px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-lg);
+  padding: 10px;
+  display: flex;
+  gap: 1.5rem;
+  overflow-x: auto;
+  align-items: center;
+  position: relative;
+}
+
+.queue-item {
+  min-width: 160px;
+  height: 100px;
+  border-radius: var(--radius-sm);
+  background: rgba(24, 34, 60, 0.8);
+  border: 1.5px dashed var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0.75rem;
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.queue-item:hover {
+  transform: translateY(-4px);
+  border-color: var(--accent-cyan);
+  box-shadow: 0 4px 15px rgba(56, 189, 248, 0.2);
+}
+
+.queue-item.active {
+  border: 2px solid var(--accent-cyan);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.queue-item.SAFE {
+  border-color: var(--color-safe);
+}
+.queue-item.WARNING {
+  border-color: var(--color-warning);
+}
+.queue-item.CRITICAL {
+  border-color: var(--color-critical);
+  animation: pulseGlow 2s infinite ease-in-out;
+}
+
+/* Material Chips */
+.mat-chip {
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.mat-chip.organic {
+  background: var(--color-organic-glow);
+  color: var(--color-organic);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+}
+
+.mat-chip.metallic {
+  background: var(--color-metallic-glow);
+  color: var(--color-metallic);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.mat-chip.mixed {
+  background: var(--color-mixed-glow);
+  color: var(--color-mixed);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.mat-chip.opaque {
+  background: var(--color-opaque-glow);
+  color: var(--color-opaque);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+/* Radar & Property Slider Grid */
+.props-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.prop-bar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.prop-label-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.prop-bar-outer {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.prop-bar-inner {
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--accent-cyan);
+  transition: width var(--transition-normal);
+}
+
+/* Dynamic Interactive Controls */
+.slider-control {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.slider-control::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  cursor: pointer;
+  box-shadow: 0 0 8px var(--accent-cyan);
+}
+
+/* Button UI */
+.btn-primary {
+  background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+  color: var(--text-primary);
+  border: none;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all var(--transition-fast);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  font-family: 'Outfit', sans-serif;
+  font-weight: 500;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all var(--transition-fast);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.layout-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 250px;
+  background: var(--bg-panel);
+  border-right: 1px solid rgba(255,255,255,0.05);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 1rem;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 2.5rem;
+  padding: 0 0.5rem;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  flex: 1;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.nav-group-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  margin-bottom: 0.25rem;
+  padding: 0 0.5rem;
+}
+
+.nav-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+
+.nav-btn:hover {
+  background: rgba(255,255,255,0.03);
+  color: var(--text-primary);
+}
+
+.nav-btn.active {
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--accent-cyan);
+  font-weight: 600;
+}
+
+.system-status {
+  margin-top: auto;
+  padding: 1rem;
+  background: rgba(255,255,255,0.02);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255,255,255,0.05);
+  margin-bottom: 1.5rem;
+}
+
+.sidebar-footer {
+  display: flex;
+  justify-content: space-around;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.icon-btn:hover {
+  background: rgba(255,255,255,0.05);
+  color: var(--text-primary);
+}
+
+.main-content {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto;
+  background: var(--bg-main);
+}
+
