@@ -1,133 +1,140 @@
 import React from 'react';
-import { Play, Pause, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Play, Pause, ShieldCheck, AlertTriangle, RefreshCw } from 'lucide-react';
 
 export default function ConveyorTab({
-  isPlaying, setIsPlaying, luggageQueue, selectedBag, scanResult, scanLoading, selectedBoxId, setSelectedBoxId, handleSelectBag
+  isPlaying, setIsPlaying, luggageQueue, selectedBag,
+  scanResult, scanLoading, selectedBoxId, setSelectedBoxId, handleSelectBag
 }) {
+  const getThreatColor = (level) => {
+    if (level === 'CRITICAL') return 'var(--color-critical)';
+    if (level === 'WARNING') return 'var(--color-warning)';
+    return 'var(--color-safe)';
+  };
+
+  const getMaterialColor = (mat) => {
+    if (mat === 'organic') return 'var(--color-organic)';
+    if (mat === 'metallic') return 'var(--color-metallic)';
+    if (mat === 'mixed') return 'var(--color-mixed)';
+    return 'var(--color-opaque)';
+  };
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', height: '100%' }}>
-      {/* Simulation Control Panel */}
-      <div className="glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <h3 style={{ fontSize: '0.85rem', fontWeight: '800', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.5px' }}>Conveyor Control</h3>
-        <button 
-          className={isPlaying ? "btn-danger" : "btn-primary"}
-          style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
-          onClick={() => setIsPlaying(!isPlaying)}
-        >
-          {isPlaying ? <><Pause size={16} /> Halt Belt</> : <><Play size={16} /> Start Belt</>}
+    <div className="animate-fadeIn" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%' }}>
+      
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 className="section-title">
+          <ShieldCheck size={22} color="var(--accent-primary)" />
+          Operator Live Feed
+        </h2>
+        <button onClick={() => setIsPlaying(!isPlaying)} className="btn-primary">
+          {isPlaying ? <><Pause size={16} /> Pause Conveyor</> : <><Play size={16} /> Start Conveyor</>}
         </button>
-        
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-          {luggageQueue.map((bag) => (
-            <div 
-              key={bag.id}
-              onClick={() => handleSelectBag(bag)}
-              style={{
-                padding: '0.75rem',
-                borderRadius: '8px',
-                background: selectedBag?.id === bag.id ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.02)',
-                border: selectedBag?.id === bag.id ? '1px solid var(--accent-cyan)' : '1px solid rgba(255,255,255,0.05)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <div style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '0.2rem' }}>{bag.name}</div>
-              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Expected: <span style={{ color: bag.expected_level === 'CRITICAL' ? 'var(--color-critical)' : (bag.expected_level === 'WARNING' ? 'var(--color-warning)' : 'var(--color-safe)') }}>{bag.expected_level}</span></div>
-            </div>
-          ))}
-        </div>
       </div>
 
-      {/* Main Inspection View */}
-      <div className="glass-panel" style={{ padding: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ padding: '1.25rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ fontSize: '1.1rem', fontWeight: '800' }}>Live Scanner Feed</h2>
-          {scanResult && (
-            <div className="mat-chip" style={{ 
-              background: scanResult.overall.level === 'CRITICAL' ? 'var(--color-critical-glow)' : 'var(--color-safe-glow)', 
-              color: scanResult.overall.level === 'CRITICAL' ? 'var(--color-critical)' : 'var(--color-safe)',
-              border: '1px solid currentColor'
-            }}>
-              {scanResult.overall.level === 'CRITICAL' ? <AlertTriangle size={14} /> : <ShieldCheck size={14} />}
-              Verdict: {scanResult.overall.level}
+      {/* Conveyor Strip */}
+      <div className={`bag-queue-belt ${isPlaying ? 'conveyor-animation' : ''}`}>
+        {luggageQueue.map((bag) => (
+          <div 
+            key={bag.id}
+            className={`queue-item ${bag.id === selectedBag?.id ? 'active' : ''} ${bag.result?.overall?.level || ''}`}
+            onClick={() => handleSelectBag(bag)}
+          >
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              Bag #{bag.id.substring(0, 5)}
+            </div>
+            {bag.result ? (
+              <div style={{ fontSize: '0.65rem', color: getThreatColor(bag.result.overall.level), fontWeight: 700 }}>
+                {bag.result.overall.level}
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Pending...</div>
+            )}
+            {bag.result && bag.result.bboxes.length > 0 && (
+              <div className={`mat-chip ${bag.result.bboxes[0].material}`}>
+                {bag.result.bboxes[0].material}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Selected Bag Detail */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '1.25rem', flex: 1, minHeight: 0 }}>
+        
+        {/* Left: Image Viewer */}
+        <div className="glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          {scanLoading ? (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', zIndex: 10 }}>
+              <RefreshCw size={32} className="animate-spin" color="var(--accent-primary)" />
+            </div>
+          ) : null}
+          
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', position: 'relative' }}>
+            {scanResult ? (
+              <img src={scanResult.annotated_image} alt="Scan Result" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+            ) : (
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Select a bag to view analysis</div>
+            )}
+          </div>
+          
+          {scanResult && scanResult.bboxes.length > 0 && (
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+              {scanResult.bboxes.map((box, i) => (
+                <button
+                  key={i}
+                  onClick={() => setSelectedBoxId(i)}
+                  className={selectedBoxId === i ? 'btn-primary' : 'btn-ghost'}
+                  style={{
+                    fontSize: '0.72rem', padding: '0.3rem 0.6rem',
+                    border: selectedBoxId === i ? 'none' : `1px solid ${getThreatColor(box.threat_level)}33`,
+                    color: selectedBoxId === i ? 'white' : getThreatColor(box.threat_level)
+                  }}
+                >
+                  #{i + 1} {box.material}
+                </button>
+              ))}
             </div>
           )}
         </div>
-        
-        <div style={{ flex: 1, padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', overflowY: 'auto' }}>
-          {scanLoading ? (
-            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'var(--accent-cyan)' }}>
-              Scanning...
-            </div>
-          ) : scanResult ? (
-            <>
-              {/* Dual Image Display */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', height: '350px' }}>
-                <div style={{ background: '#0e111a', borderRadius: '8px', padding: '0.5rem', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', textAlign: 'center' }}>Raw Dual-Energy X-Ray</span>
-                  <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
-                    <img src={scanResult.original_image} alt="Raw" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                  </div>
-                </div>
-                <div style={{ background: '#0e111a', borderRadius: '8px', padding: '0.5rem', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', textAlign: 'center' }}>AI Detected Properties</span>
-                  <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
-                    <img src={scanResult.annotated_image} alt="Annotated" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                  </div>
-                </div>
+
+        {/* Right: Threat Info */}
+        <div className="glass-panel" style={{ padding: '1.25rem', overflowY: 'auto' }}>
+          <h3 className="section-subtitle">Bag Diagnostics</h3>
+          {scanResult ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div className="glass-inset" style={{ padding: '1rem', borderLeft: `4px solid ${getThreatColor(scanResult.overall.level)}` }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Overall Verdict</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: getThreatColor(scanResult.overall.level) }}>{scanResult.overall.level}</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', marginTop: '0.5rem' }}>{scanResult.overall.explanation}</div>
               </div>
-
-              {/* Detected Objects List */}
-              {scanResult.bboxes.length > 0 && (
-                <div>
-                  <h3 style={{ fontSize: '0.85rem', fontWeight: '700', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>Detected Elements ({scanResult.bboxes.length})</h3>
-                  <div style={{ display: 'flex', gap: '0.75rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
-                    {scanResult.bboxes.map((box, idx) => (
-                      <button 
-                        key={idx}
-                        className={`mat-chip ${selectedBoxId === idx ? 'active' : ''}`}
-                        onClick={() => setSelectedBoxId(idx)}
-                        style={{
-                          background: selectedBoxId === idx ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.02)',
-                          borderColor: box.threat_level === 'CRITICAL' ? 'var(--color-critical)' : 'rgba(255,255,255,0.1)'
-                        }}
-                      >
-                        Item #{idx + 1} - {box.material}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Inspector Panel */}
-              {selectedBoxId !== null && scanResult.bboxes[selectedBoxId] && (
-                <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '8px', padding: '1.25rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <h4 style={{ fontSize: '0.9rem', fontWeight: '800', marginBottom: '1rem', color: 'var(--accent-cyan)' }}>Deep Properties Extracted (Model 1)</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem' }}>
-                    {Object.entries(scanResult.bboxes[selectedBoxId].properties || {}).map(([key, value]) => {
-                      const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                      const formattedVal = typeof value === 'number' ? value.toFixed(3) : value;
+              
+              {scanResult.bboxes[selectedBoxId] && (
+                <>
+                  <h4 className="section-subtitle" style={{ marginTop: '0.5rem' }}>Selected Object Properties</h4>
+                  <div className="props-grid">
+                    {Object.entries(scanResult.properties?.[selectedBoxId] || {}).slice(0, 8).map(([key, value]) => {
+                      const norm = Math.min((value / (key === 'length_to_width_ratio' ? 10 : 1)) * 100, 100);
                       return (
-                        <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                          <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>{formattedKey}</span>
-                          <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-main)' }}>{formattedVal}</span>
+                        <div key={key} className="prop-bar-container">
+                          <div className="prop-label-row">
+                            <span className="label">{key.replace(/_/g, ' ')}</span>
+                            <span className="value">{value.toFixed(2)}</span>
+                          </div>
+                          <div className="prop-bar-outer">
+                            <div className="prop-bar-inner" style={{ width: `${norm}%` }} />
+                          </div>
                         </div>
                       );
                     })}
                   </div>
-                  <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>Model 2 Classification Reason:</span>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-main)', lineHeight: '1.4' }}>{scanResult.bboxes[selectedBoxId].explanation}</p>
-                  </div>
-                </div>
+                </>
               )}
-            </>
-          ) : (
-            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)' }}>
-              Select a bag to view scan results.
             </div>
+          ) : (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Waiting for data...</div>
           )}
         </div>
+
       </div>
     </div>
   );

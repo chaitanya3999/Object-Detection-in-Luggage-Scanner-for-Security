@@ -1,33 +1,36 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Toaster } from 'sonner';
 import Sidebar from './components/Sidebar';
 import AlertLog from './components/AlertLog';
-import ConveyorTab from './components/ConveyorTab';
 import ScannerTab from './components/ScannerTab';
+import ConveyorTab from './components/ConveyorTab';
 import TIPTab from './components/TIPTab';
 import AnalyticsTab from './components/AnalyticsTab';
+import { Toaster } from 'sonner';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('conveyor');
+  const [activeTab, setActiveTab] = useState('manual');
   const [modelStatus, setModelStatus] = useState(null);
   
-  // Conveyor Simulator State
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [luggageQueue, setLuggageQueue] = useState([]);
-  const [selectedBag, setSelectedBag] = useState(null);
-  const [scanResult, setScanResult] = useState(null);
-  const [scanLoading, setScanLoading] = useState(false);
-
-  // Manual Analyzer State
+  // Analytics State
+  const [analyticsData, setAnalyticsData] = useState(null);
+  
+  // Manual Tab State
   const [uploadedFile, setUploadedFile] = useState(null);
   const [uploadPreview, setUploadPreview] = useState(null);
   const [manualScanResult, setManualScanResult] = useState(null);
+  const [scanLoading, setScanLoading] = useState(false);
   const [hoveredBoxId, setHoveredBoxId] = useState(null);
   const [selectedBoxId, setSelectedBoxId] = useState(null);
+  const analyzerImgRef = useRef(null);
 
-  // TIP Sandbox State
+  // Conveyor State
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [luggageQueue, setLuggageQueue] = useState([]);
+  const [selectedBag, setSelectedBag] = useState(null);
+
+  // TIP State
   const [tipBgType, setTipBgType] = useState('safe_luggage');
-  const [tipThreatType, setTipThreatType] = useState('knife');
+  const [tipThreatType, setTipThreatType] = useState('glock_19');
   const [tipScale, setTipScale] = useState(1.0);
   const [tipAngle, setTipAngle] = useState(0);
   const [tipPosX, setTipPosX] = useState(50);
@@ -37,173 +40,95 @@ export default function App() {
   const [tipLoading, setTipLoading] = useState(false);
   const [tipHoveredBoxId, setTipHoveredBoxId] = useState(null);
   const [tipSelectedBoxId, setTipSelectedBoxId] = useState(null);
-
-  // Analytics State
-  const [analyticsData, setAnalyticsData] = useState(null);
-
-  // Refs for tracking viewport sizing in canvas coordinate projection
-  const analyzerImgRef = useRef(null);
   const tipImgRef = useRef(null);
 
-  // Pre-configured simulation threats
   const threatPresets = [
-    { id: 'knife', name: 'Steel Hunting Knife', material: 'metallic', complexity: 'High' },
-    { id: 'scissors', name: 'Medical Scissors', material: 'metallic', complexity: 'Medium' },
-    { id: 'handgun', name: 'Revolver Frame', material: 'metallic', complexity: 'Critical' },
-    { id: 'aerosol', name: 'Deodorant Aerosol Can', material: 'mixed', complexity: 'Low' },
-    { id: 'shield_block', name: 'Lead Block', material: 'opaque', complexity: 'Critical' }
+    { id: 'glock_19', name: 'Glock 19 (High Density Metal)' },
+    { id: 'kitchen_knife', name: 'Chef Knife (Sharp Profile)' },
+    { id: 'pipe_bomb', name: 'Pipe Bomb (Mixed Materials)' },
+    { id: 'scissors', name: 'Scissors (Tool/Weapon)' },
+    { id: 'water_bottle', name: 'Water Bottle (Dense Organic)' }
   ];
 
-  // Helper to convert B64 to Blob
-  const b64toBlob = (b64Data, contentType='', sliceSize=512) => {
-    const byteCharacters = atob(b64Data);
-    const byteArrays = [];
-    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-      const slice = byteCharacters.slice(offset, offset + sliceSize);
-      const byteNumbers = new Array(slice.length);
-      for (let i = 0; i < slice.length; i++) {
-        byteNumbers[i] = slice.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      byteArrays.push(byteArray);
-    }
-    return new Blob(byteArrays, {type: contentType});
-  };
-
-  // Load Initial Status
+  // Fetch Status
   useEffect(() => {
     fetch('/api/model-status')
       .then(res => res.json())
       .then(data => setModelStatus(data))
-      .catch(err => console.error("Error loading model status: ", err));
-
-    fetch('/api/mock-analytics')
-      .then(res => res.json())
-      .then(data => setAnalyticsData(data))
-      .catch(err => console.error("Error loading analytics: ", err));
+      .catch(err => console.error(err));
   }, []);
 
-  // Fetch Luggage Feed for conveyor belt
+  // Fetch Analytics
   useEffect(() => {
-    fetch('/api/feed')
-      .then(res => res.json())
-      .then(data => {
-        setLuggageQueue(data);
-        if (data.length > 0) {
-          handleSelectBag(data[0]);
-        }
-      })
-      .catch(err => console.error("Error loading luggage feed: ", err));
-  }, []);
+    if (activeTab === 'analytics' && !analyticsData) {
+      fetch('/api/analytics')
+        .then(res => res.json())
+        .then(data => setAnalyticsData(data))
+        .catch(err => console.error(err));
+    }
+  }, [activeTab]);
 
-  // Simulator Timer: Auto moves bags on belt when playing
+  // Conveyor Simulator
   useEffect(() => {
-    let interval = null;
-    if (isPlaying && luggageQueue.length > 0) {
+    let interval;
+    if (isPlaying) {
       interval = setInterval(() => {
-        setLuggageQueue(prev => {
-          const rotated = [...prev.slice(1), prev[0]];
-          handleSelectBag(rotated[0]);
-          return rotated;
-        });
-      }, 8000);
+        const id = Math.random().toString(36).substring(7);
+        const newBag = { id, timestamp: Date.now(), result: null };
+        setLuggageQueue(prev => [newBag, ...prev].slice(0, 10));
+        
+        // Simulate scan delay
+        setTimeout(() => {
+          fetch('/api/analytics') // Using analytics as a dummy ping to simulate activity if no real stream exists
+            .then(() => {
+              setLuggageQueue(prev => prev.map(b => 
+                b.id === id ? { ...b, result: { 
+                  overall: { level: Math.random() > 0.8 ? 'CRITICAL' : 'SAFE', explanation: 'Auto-scanned.' },
+                  bboxes: [] 
+                }} : b
+              ));
+            });
+        }, 1500);
+      }, 3000);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, luggageQueue]);
+  }, [isPlaying]);
 
-  const handleSelectBag = (bag) => {
-    setSelectedBag(bag);
-    setScanLoading(true);
-    
-    fetch(`/api/feed/image/${bag.mock_type}`)
-      .then(res => res.json())
-      .then(imgData => {
-        const base64Content = imgData.image.split(',')[1];
-        const blob = b64toBlob(base64Content, 'image/jpeg');
-        const file = new File([blob], `${bag.mock_type}.jpg`, { type: 'image/jpeg' });
-        
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        return fetch('/api/scan', {
-          method: 'POST',
-          body: formData
-        });
-      })
-      .then(res => res.json())
-      .then(scanData => {
-        setScanResult(scanData);
-        setScanLoading(false);
-        setSelectedBoxId(scanData.bboxes.length > 0 ? 0 : null);
-      })
-      .catch(err => {
-        console.error("Error scanning bag:", err);
-        setScanLoading(false);
-      });
-  };
-
-  const handleRunTIP = async () => {
+  const handleRunTIP = () => {
     setTipLoading(true);
     setTipResult(null);
     setTipSelectedBoxId(null);
-    try {
-      const bgRes = await fetch(`/api/feed/image/${tipBgType}`);
-      const bgData = await bgRes.json();
-      const bgFile = new File([b64toBlob(bgData.image.split(',')[1], 'image/jpeg')], "bg.jpg", { type: 'image/jpeg' });
-
-      let fgMockType = 'knife_bag';
-      if (tipThreatType === 'scissors') fgMockType = 'toolbox';
-      if (tipThreatType === 'handgun') fgMockType = 'knife_bag'; 
-      if (tipThreatType === 'aerosol') fgMockType = 'aerosol_bag';
-      if (tipThreatType === 'shield_block') fgMockType = 'shielded_bag';
-
-      const fgRes = await fetch(`/api/feed/image/${fgMockType}`);
-      const fgData = await fgRes.json();
-      const fgFile = new File([b64toBlob(fgData.image.split(',')[1], 'image/jpeg')], "fg.jpg", { type: 'image/jpeg' });
-
-      const formData = new FormData();
-      formData.append('bg_file', bgFile);
-      formData.append('fg_file', fgFile);
-      formData.append('scale', tipScale);
-      formData.append('angle', tipAngle);
-      formData.append('pos_x_pct', tipPosX);
-      formData.append('pos_y_pct', tipPosY);
-      formData.append('thickness', tipThickness);
-
-      const res = await fetch('/api/tip', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
+    fetch('/api/tip/project', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bg_type: tipBgType,
+        threat_type: tipThreatType,
+        scale: tipScale,
+        angle: tipAngle,
+        pos_x: tipPosX,
+        pos_y: tipPosY,
+        material_thickness: tipThickness
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
       setTipResult(data);
-      if (data.bboxes && data.bboxes.length > 0) {
-        setTipSelectedBoxId(0);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
       setTipLoading(false);
-    }
+    })
+    .catch(err => {
+      console.error(err);
+      setTipLoading(false);
+    });
   };
 
   return (
     <div className="layout-container">
-      {/* Toast notifications anchored to top right */}
-      <Toaster position="top-right" theme="dark" richColors />
-
+      <Toaster theme="dark" position="top-right" />
+      
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} modelStatus={modelStatus} />
       
       <main className="main-content">
-        {activeTab === 'conveyor' && (
-          <ConveyorTab 
-            isPlaying={isPlaying} setIsPlaying={setIsPlaying}
-            luggageQueue={luggageQueue} selectedBag={selectedBag}
-            scanResult={scanResult} scanLoading={scanLoading}
-            selectedBoxId={selectedBoxId} setSelectedBoxId={setSelectedBoxId}
-            handleSelectBag={handleSelectBag}
-          />
-        )}
-        
         {activeTab === 'manual' && (
           <ScannerTab 
             uploadedFile={uploadedFile} setUploadedFile={setUploadedFile}
@@ -213,6 +138,16 @@ export default function App() {
             hoveredBoxId={hoveredBoxId} setHoveredBoxId={setHoveredBoxId}
             selectedBoxId={selectedBoxId} setSelectedBoxId={setSelectedBoxId}
             analyzerImgRef={analyzerImgRef}
+          />
+        )}
+
+        {activeTab === 'conveyor' && (
+          <ConveyorTab 
+            isPlaying={isPlaying} setIsPlaying={setIsPlaying}
+            luggageQueue={luggageQueue} selectedBag={selectedBag}
+            scanResult={selectedBag?.result} scanLoading={false}
+            selectedBoxId={selectedBoxId} setSelectedBoxId={setSelectedBoxId}
+            handleSelectBag={setSelectedBag}
           />
         )}
 
@@ -237,8 +172,7 @@ export default function App() {
           <AnalyticsTab analyticsData={analyticsData} />
         )}
       </main>
-
-      {/* Persistent real-time Alert Log on the right */}
+      
       <AlertLog />
     </div>
   );
