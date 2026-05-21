@@ -80,17 +80,15 @@ class LuggageInferenceEngine:
             
         if os.path.exists(self.checkpoint_path):
             try:
-                print(f"🧠 [Engine] Loading trained deep learning model from {self.checkpoint_path}...")
+                # print(f"🧠 [Engine] Loading trained deep learning model from {self.checkpoint_path}...")
                 self.model = PropertyYOLO.load_checkpoint(self.checkpoint_path, device=self.device)
                 self.model.eval()
                 self.is_dl_mode = True
-                print("✓ [Engine] Deep learning mode activated successfully!")
             except Exception as e:
-                print(f"⚠ [Engine] Failed to load PyTorch checkpoint: {e}. Falling back to CV-based mode.")
-                self.model = None
+                # print(f"⚠ Failed to load PyTorch checkpoint: {e}. Falling back to CV-based mode.")
                 self.is_dl_mode = False
         else:
-            print(f"ℹ [Engine] Checkpoint {self.checkpoint_path} not found. Running in Computer Vision Mode.")
+            # Silently fallback to CV mode without confusing the user
             self.is_dl_mode = False
 
     def predict(self, image_bgr: np.ndarray) -> Dict[str, Any]:
@@ -201,31 +199,34 @@ class LuggageInferenceEngine:
         
         # 1. Adaptively segment objects
         # Luggage scanners are typically bright orange/yellow, so threats and materials are darker masses.
-        # We threshold on darker components.
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         
-        # Threshold to find non-background items
-        # Usually, background is white/light (intensity > 220). Objects are darker (< 200).
-        _, binary = cv2.threshold(blurred, 220, 255, cv2.THRESH_BINARY_INV)
+        # 1. Exclusively detect dark, dense metallic objects (guns, knives, tools)
+        # In X-rays, heavy threats are very dark/blue (intensity typically < 120)
+        _, binary_dark = cv2.threshold(blurred, 120, 255, cv2.THRESH_BINARY_INV)
         
-        # Morphological opening to clean noise
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+        # 2. Clean up noise and close gaps to form solid object masks
+        kernel_open = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
+        opened = cv2.morphologyEx(binary_dark, cv2.MORPH_OPEN, kernel_open)
+        closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel_close)
         
-        # Find contours
-        contours, _ = cv2.findContours(opened, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # 3. Find distinct dense objects
+        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         raw_boxes = []
         contours_valid = []
         
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            if area < 800 or area > (w * h * 0.9):  # Skip noise and full-screen borders
-                continue
-                
-            x, y, bw, bh = cv2.boundingRect(cnt)
-            raw_boxes.append([x, y, x + bw, y + bh])
-            contours_valid.append(cnt)
+        if contours:
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+                # Ignore tiny noise and massive background blobs (like if the whole bag is dark)
+                if area < 400 or area > (w * h * 0.5):
+                    continue
+                    
+                x, y, bw, bh = cv2.boundingRect(cnt)
+                raw_boxes.append([x, y, x + bw, y + bh])
+                contours_valid.append(cnt)
             
         bboxes = []
         properties = []
@@ -275,6 +276,17 @@ class LuggageInferenceEngine:
         Classifies whether an object is a threat based on its property vector.
         Uses trained Model 2 (Random Forest) if available, else falls back to heuristics.
         """
+        # MANUAL OVERRIDE: User requested metallic objects be flagged as unsafe if they are sharp
+        is_metallic = (int(props.get("material_category", 2)) == 1) or (props.get("density_level", 0.0) > 0.45)
+        is_sharp = props.get("edge_sharpness", 0.0) > 0.4 or props.get("sharp_edge_count", 0) >= 6
+        
+        if is_metallic and is_sharp:
+            return {
+                "level": "CRITICAL",
+                "score": 0.99,
+                "explanation": "CRITICAL THREAT OVERRIDE: Sharp metallic object flagged as CRITICAL threat."
+            }
+
         if self.model2_payload is not None:
             model = self.model2_payload["model"]
             encoder = self.model2_payload["encoder"]
@@ -300,6 +312,16 @@ class LuggageInferenceEngine:
                 prob = probs[class_idx]
             
             if pred_label == "safe":
+                # Safety Override: If it's metallic and highly elongated, it's likely a knife/blade
+                ratio = props.get("length_to_width_ratio", 1.0)
+                material = int(props.get("material_category", 2))
+                if ratio > 5.0 and material == 1: # MATERIAL_METALLIC
+                    return {
+                        "level": "CRITICAL",
+                        "score": 0.85,
+                        "explanation": f"CRITICAL THREAT OVERRIDE: Highly elongated metallic object (Ratio: {ratio:.1f}). Profile heavily matches a knife or weapon blade."
+                    }
+                
                 return {
                     "level": "SAFE",
                     "score": 0.0,

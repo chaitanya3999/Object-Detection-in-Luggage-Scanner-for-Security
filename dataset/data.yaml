@@ -1,0 +1,11 @@
+names:
+- gun
+- knife
+- wrench
+- pliers
+- scissors
+nc: 5
+path: /content/drive/MyDrive/Object-Detection-in-Luggage-Scanner-for-Security/data/splits
+test: test/images
+train: train/images
+val: val/images

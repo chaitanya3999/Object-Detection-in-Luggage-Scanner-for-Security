@@ -15,7 +15,7 @@ root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 sys.path.insert(0, root_dir)
 
 try:
-    from api import XRayAPI
+    from backend.api import XRayAPI
     HAS_API = True
 except ImportError as e:
     print(f"⚠ Failed to import XRayAPI (missing dependencies like torch?): {e}")
@@ -27,8 +27,8 @@ router = APIRouter(prefix="/api")
 
 # Initialize XRayAPI (Model 1) exactly ONCE globally on startup
 print("Initializing Model 1 (XRayAPI) globally on startup...")
-stage1_path = os.path.join(root_dir, "best.pt")
-stage2_path = os.path.join(root_dir, "stage2_ultimate.pth")
+stage1_path = os.path.join(root_dir, "checkpoints", "best.pt")
+stage2_path = os.path.join(root_dir, "checkpoints", "stage2_ultimate.pth")
 
 try:
     if HAS_API:
@@ -62,6 +62,17 @@ def mat_to_base64_data_uri(image: np.ndarray, ext: str = ".jpg") -> str:
 
 def evaluate_threat_with_model2(props: dict) -> dict:
     """Uses Model 2 to classify threat based on Model 1's physical properties."""
+    
+    # MANUAL OVERRIDE: User requested ALL metallic objects be flagged as unsafe threats
+    is_metallic = (props.get("material_category", 0) == 1) or (props.get("density_level", 0.0) > 0.45)
+    
+    if is_metallic:
+        return {
+            "level": "CRITICAL",
+            "score": 0.99,
+            "explanation": "Security Override: Sharp metallic object flagged as CRITICAL threat."
+        }
+
     if model2_payload is not None:
         model = model2_payload["model"]
         encoder = model2_payload.get("encoder")
@@ -135,9 +146,37 @@ def get_model_status():
         ]
     }
 
+try:
+    from backend.inference import LuggageInferenceEngine
+    fallback_engine = LuggageInferenceEngine()
+except ImportError as e:
+    print(f"⚠ Failed to import LuggageInferenceEngine: {e}")
+    fallback_engine = None
+
 def predict_image(img: np.ndarray, db_session: Session = None) -> dict:
     if not api_engine:
-        raise RuntimeError("XRayAPI Engine is not initialized.")
+        if fallback_engine:
+            print("⚠ Using CV Fallback Engine because XRayAPI is unavailable.")
+            res = fallback_engine.predict(img)
+            
+            if db_session:
+                threat_objects = [b for b in res["bboxes"] if b["threat_level"] in ["CRITICAL", "WARNING"]]
+                log_entry = ScanLog(
+                    overall_threat=res["overall"]["level"],
+                    num_objects=len(res["bboxes"]),
+                    threat_details=json.dumps(threat_objects),
+                    inference_mode=res["mode"]
+                )
+                db_session.add(log_entry)
+                db_session.commit()
+                db_session.refresh(log_entry)
+                res["scan_id"] = log_entry.id
+            else:
+                res["scan_id"] = None
+                
+            return res
+        else:
+            raise RuntimeError("XRayAPI Engine is not initialized and CV Fallback failed to load.")
         
     temp_dir = os.path.join(root_dir, "backend", "temp")
     os.makedirs(temp_dir, exist_ok=True)

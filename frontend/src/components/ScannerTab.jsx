@@ -192,7 +192,7 @@ class IncidentReportTemplate extends React.Component {
                           <tr key={key}>
                             <td style={{ border: '1px solid #e2e8f0', padding: '6px' }}>{meta.label}</td>
                             <td style={{ border: '1px solid #e2e8f0', padding: '6px', fontVariantNumeric: 'tabular-nums' }}>
-                              {typeof val === 'number' ? val.toFixed(4) : val}
+                              {typeof val === 'number' ? (Number.isInteger(val) ? val : val.toFixed(4)) : val}
                             </td>
                             <td style={{
                               border: '1px solid #e2e8f0', padding: '6px',
@@ -268,7 +268,7 @@ export default function ScannerTab({
 
   // react-to-print hook
   const handlePrint = useReactToPrint({
-    content: () => reportRef.current,
+    contentRef: reportRef,
     documentTitle: `VIT_Security_Report_${Date.now()}`,
   });
 
@@ -285,15 +285,22 @@ export default function ScannerTab({
     formData.append('file', file);
 
     fetch('/api/scan', { method: 'POST', body: formData })
-      .then(res => res.json())
+      .then(async res => {
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || `Server Error ${res.status}`);
+        }
+        return res.json();
+      })
       .then(data => {
         setManualScanResult(data);
         setScanLoading(false);
         if (data.bboxes && data.bboxes.length > 0) setSelectedBoxId(0);
       })
       .catch(err => {
-        console.error(err);
+        console.error("Scan failed:", err);
         setScanLoading(false);
+        import('sonner').then(({ toast }) => toast.error(err.message));
       });
   }, [setUploadedFile, setUploadPreview, setManualScanResult, setSelectedBoxId, setScanLoading]);
 
@@ -604,7 +611,7 @@ export default function ScannerTab({
                         <div className="prop-label-row">
                           <span className="label">{meta.icon} {meta.label}</span>
                           <span className="value" style={isHigh ? { color: 'var(--color-critical)' } : {}}>
-                            {typeof value === 'number' ? value.toFixed(3) : value}
+                            {typeof value === 'number' ? (Number.isInteger(value) ? value : value.toFixed(3)) : value}
                           </span>
                         </div>
                         <div className="prop-bar-outer">
@@ -659,11 +666,12 @@ export default function ScannerTab({
 
       {/* ── Hidden Print Component ────────────── */}
       <div style={{ display: 'none' }}>
-        <IncidentReportTemplate
-          ref={reportRef}
-          scanResult={manualScanResult}
-          selectedBoxId={selectedBoxId}
-        />
+        <div ref={reportRef}>
+          <IncidentReportTemplate
+            scanResult={manualScanResult}
+            selectedBoxId={selectedBoxId}
+          />
+        </div>
       </div>
     </div>
   );
