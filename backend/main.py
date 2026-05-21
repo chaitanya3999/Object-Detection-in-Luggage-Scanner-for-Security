@@ -32,5 +32,5 @@ app.include_router(tip.router)
 def health_check():
     return {
         "status": "healthy", 
-        "engine_mode": "Deep Learning" if inference.engine.is_dl_mode else "Computer Vision (Fallback)"
+        "engine_mode": "Deep Learning" if inference.api_engine is not None else "Computer Vision (Fallback)"
     }

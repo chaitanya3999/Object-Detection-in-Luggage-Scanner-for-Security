@@ -4,35 +4,113 @@ import base64
 import numpy as np
 import os
 import sys
+import joblib
+import pandas as pd
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 
 # Add root directory to sys.path to import api.py and backend.database
-root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(root_dir)
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, root_dir)
 
-from api import XRayAPI
+try:
+    from api import XRayAPI
+    HAS_API = True
+except ImportError as e:
+    print(f"⚠ Failed to import XRayAPI (missing dependencies like torch?): {e}")
+    HAS_API = False
+
 from backend.database import get_db, ScanLog
 
 router = APIRouter(prefix="/api")
 
-# Initialize XRayAPI exactly ONCE globally on startup as requested
-print("Initializing XRayAPI globally on startup...")
+# Initialize XRayAPI (Model 1) exactly ONCE globally on startup
+print("Initializing Model 1 (XRayAPI) globally on startup...")
 stage1_path = os.path.join(root_dir, "best.pt")
 stage2_path = os.path.join(root_dir, "stage2_ultimate.pth")
 
 try:
-    api_engine = XRayAPI(stage1_weights=stage1_path, stage2_weights=stage2_path, device="cpu")
-    print("✓ XRayAPI instantiated successfully.")
+    if HAS_API:
+        api_engine = XRayAPI(stage1_weights=stage1_path, stage2_weights=stage2_path, device="cpu")
+        print("✓ Model 1 (XRayAPI) instantiated successfully.")
+    else:
+        api_engine = None
 except Exception as e:
     print(f"⚠ Failed to instantiate XRayAPI: {e}")
     api_engine = None
+
+# Initialize Model 2 (Random Forest) exactly ONCE globally on startup
+print("Initializing Model 2 (Random Forest Classifier) globally...")
+model2_path = os.path.join(root_dir, "checkpoints", "model2.joblib")
+model2_payload = None
+try:
+    if os.path.exists(model2_path):
+        model2_payload = joblib.load(model2_path)
+        print("✓ Model 2 (Random Forest) loaded successfully.")
+    else:
+        print("⚠ Model 2 not found at backend/model2.joblib.")
+except Exception as e:
+    print(f"⚠ Failed to load Model 2: {e}")
+
 
 def mat_to_base64_data_uri(image: np.ndarray, ext: str = ".jpg") -> str:
     _, buffer = cv2.imencode(ext, image)
     encoded = base64.b64encode(buffer).decode("utf-8")
     return f"data:image/jpeg;base64,{encoded}"
+
+
+def evaluate_threat_with_model2(props: dict) -> dict:
+    """Uses Model 2 to classify threat based on Model 1's physical properties."""
+    if model2_payload is not None:
+        model = model2_payload["model"]
+        encoder = model2_payload.get("encoder")
+        features = model2_payload["features"]
+        
+        # Build feature vector
+        vec = [props.get(f, 0.0) for f in features]
+        X = pd.DataFrame([vec], columns=features)
+        
+        # Predict
+        pred = model.predict(X)[0]
+        probs = model.predict_proba(X)[0]
+        
+        if encoder is not None:
+            class_idx = pred
+            pred_label = encoder.inverse_transform([class_idx])[0]
+            prob = probs[class_idx]
+        else:
+            pred_label = pred
+            class_idx = list(model.classes_).index(pred_label)
+            prob = probs[class_idx]
+            
+        if pred_label == "safe":
+            return {
+                "level": "SAFE",
+                "score": float(prob),
+                "explanation": f"Model 2: Classified as SAFE with {prob*100:.1f}% confidence."
+            }
+        elif pred_label in ["gun", "knife"]:
+            return {
+                "level": "CRITICAL",
+                "score": float(prob),
+                "explanation": f"Model 2: CRITICAL THREAT - {pred_label.upper()} with {prob*100:.1f}% confidence."
+            }
+        else:
+            return {
+                "level": "WARNING",
+                "score": float(prob),
+                "explanation": f"Model 2: WARNING - {pred_label.upper()} with {prob*100:.1f}% confidence."
+            }
+            
+    # Fallback to simple heuristics if Model 2 is missing
+    density = props.get("density_level", 0.0)
+    if density > 0.75:
+        return {"level": "CRITICAL", "score": 0.9, "explanation": "High density metallic mass detected."}
+    elif density > 0.5:
+        return {"level": "WARNING", "score": 0.6, "explanation": "Suspicious density detected."}
+    return {"level": "SAFE", "score": 0.1, "explanation": "Properties within safe limits."}
+
 
 @router.get("/model-status")
 def get_model_status():
@@ -41,7 +119,7 @@ def get_model_status():
         "device": getattr(api_engine, "device", "cpu") if api_engine else "cpu",
         "checkpoint_found": os.path.exists(stage1_path),
         "checkpoint_path": stage1_path,
-        "model2_found": os.path.exists(stage2_path),
+        "model2_found": model2_payload is not None,
         "properties_schema": [
             {"index": 0, "name": "edge_sharpness", "type": "float [0,1]"},
             {"index": 1, "name": "length_to_width_ratio", "type": "float [0,10]"},
@@ -57,128 +135,122 @@ def get_model_status():
         ]
     }
 
-@router.post("/scan")
-async def scan_image(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """Receives an uploaded luggage image, saves it to temp, calls XRayAPI, and maps to UI format."""
+def predict_image(img: np.ndarray, db_session: Session = None) -> dict:
     if not api_engine:
-        raise HTTPException(status_code=500, detail="XRayAPI Engine is not initialized.")
+        raise RuntimeError("XRayAPI Engine is not initialized.")
         
-    try:
-        contents = await file.read()
+    temp_dir = os.path.join(root_dir, "backend", "temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_path = os.path.join(temp_dir, "temp_inference.jpg")
+    cv2.imwrite(temp_path, img)
+    
+    raw_result_json = api_engine.scan_luggage(temp_path)
+    api_result = json.loads(raw_result_json)
+    
+    if "error" in api_result:
+        if os.path.exists(temp_path): os.remove(temp_path)
+        raise RuntimeError(api_result["error"])
         
-        # Save to temp folder as requested by the user
-        temp_dir = os.path.join(root_dir, "backend", "temp")
-        os.makedirs(temp_dir, exist_ok=True)
-        temp_path = os.path.join(temp_dir, file.filename or "temp_upload.jpg")
+    bboxes = []
+    properties = {}
+    max_threat_score = 0.0
+    overall_level = "SAFE"
+    
+    detections = api_result.get("detections", [])
+    for i, det in enumerate(detections):
+        x1, y1, x2, y2 = det["bounding_box"]
+        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
         
-        with open(temp_path, "wb") as f:
-            f.write(contents)
-            
-        # Call the requested XRayAPI method
-        raw_result_json = api_engine.scan_luggage(temp_path)
-        api_result = json.loads(raw_result_json)
+        props = det["physical_properties"]
+        mapped_props = {
+            "density_level": props.get("density_level", 0.0),
+            "edge_sharpness": props.get("edge_sharpness", 0.0),
+            "symmetry_score": props.get("symmetry_score", 0.0),
+            "length_to_width_ratio": props.get("length_width_ratio", 0.0),
+            "curvature_index": props.get("curvature_index", 0.0),
+            "occlusion_score": props.get("occlusion_score", 0.0),
+            "material_category": 1 if "metal" in det["material_signature"].lower() else 0,
+            "approximate_volume": 0.0,
+            "avg_absorption_intensity": 0.0,
+            "material_homogeneity": 0.0,
+            "sharp_edge_count": 0
+        }
+        properties[str(i)] = mapped_props
         
-        if "error" in api_result:
-            raise HTTPException(status_code=500, detail=api_result["error"])
-            
-        # Read the image to draw bounding boxes for the UI
-        img = cv2.imread(temp_path)
-        annotated_img = img.copy()
+        threat_data = evaluate_threat_with_model2(mapped_props)
+        threat_level = threat_data["level"]
         
-        # Transform api_result into the format expected by the React frontend UI
-        bboxes = []
-        properties = {}
+        if threat_level == "CRITICAL":
+            overall_level = "CRITICAL"
+        elif threat_level == "WARNING" and overall_level != "CRITICAL":
+            overall_level = "WARNING"
+            
+        material = det["material_signature"].lower()
+        if "metal" in material: material = "metallic"
+        elif "organic" in material: material = "organic"
+        elif "plastic" in material: material = "mixed"
+        else: material = "opaque"
         
-        detections = api_result.get("detections", [])
-        for i, det in enumerate(detections):
-            x1, y1, x2, y2 = det["bounding_box"]
-            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-            
-            threat_severity = det["threat_severity_index"]
-            if threat_severity >= 85:
-                threat_level = "CRITICAL"
-                color = (0, 0, 255) # Red
-            elif threat_severity >= 50:
-                threat_level = "WARNING"
-                color = (0, 165, 255) # Orange
-            else:
-                threat_level = "SAFE"
-                mat = det["material_signature"]
-                if "Organic" in mat: color = (0, 140, 255)
-                elif "Metal" in mat: color = (255, 120, 0)
-                elif "Plastic" in mat: color = (0, 200, 0)
-                else: color = (60, 60, 60)
-                
-            material = det["material_signature"].lower()
-            if "metal" in material: material = "metallic"
-            elif "organic" in material: material = "organic"
-            elif "plastic" in material: material = "mixed"
-            else: material = "opaque"
-            
-            bboxes.append({
-                "id": i,
-                "x1": x1, "y1": y1, "x2": x2, "y2": y2,
-                "threat_level": threat_level,
-                "material": material,
-                "confidence": det["confidence_score"],
-                "explanation": f"Classified as {det['classification']} with severity {threat_severity}/100."
-            })
-            
-            # Map physical properties to the UI's radar chart
-            props = det["physical_properties"]
-            properties[str(i)] = {
-                "density_level": props.get("density_level", 0),
-                "edge_sharpness": props.get("edge_sharpness", 0),
-                "symmetry_score": props.get("symmetry_score", 0),
-                "length_to_width_ratio": props.get("length_width_ratio", 0),
-                "curvature_index": props.get("curvature_index", 0),
-                "occlusion_score": props.get("occlusion_score", 0),
-                "material_category": 1 if "metal" in det["material_signature"].lower() else 0
-            }
-            
-            # Draw bounding boxes and labels
-            cv2.rectangle(annotated_img, (x1, y1), (x2, y2), color, 3)
-            lbl = f"#{i+1} {material.upper()} ({int(det['confidence_score']*100)}%)"
-            cv2.putText(annotated_img, lbl, (x1, max(y1 - 10, 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-            
-        # Log to SQLite Database
+        bboxes.append({
+            "id": i,
+            "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+            "threat_level": threat_level,
+            "material": material,
+            "confidence": det["confidence_score"],
+            "explanation": threat_data["explanation"]
+        })
+        
+    if db_session:
         threat_objects = [b for b in bboxes if b["threat_level"] in ["CRITICAL", "WARNING"]]
-        
-        overall_level = "SAFE"
-        protocol = api_result.get("security_protocol", "STANDARD_CLEARANCE")
-        if "CRITICAL" in protocol: overall_level = "CRITICAL"
-        elif "MANUAL" in protocol or "CAUTION" in protocol: overall_level = "WARNING"
-            
         log_entry = ScanLog(
             overall_threat=overall_level,
             num_objects=len(bboxes),
             threat_details=json.dumps(threat_objects),
-            inference_mode="Dual-Head XRayAPI"
+            inference_mode="Model 1 (DL) + Model 2 (RF)"
         )
-        db.add(log_entry)
-        db.commit()
-        db.refresh(log_entry)
+        db_session.add(log_entry)
+        db_session.commit()
+        db_session.refresh(log_entry)
+        scan_id = log_entry.id
+    else:
+        scan_id = None
         
-        original_base64 = mat_to_base64_data_uri(img)
-        annotated_base64 = mat_to_base64_data_uri(annotated_img)
-        
-        # Cleanup temporary uploaded file
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-            
-        return {
-            "scan_id": log_entry.id,
-            "mode": "Dual-Head Deep Learning (XRayAPI)",
-            "bboxes": bboxes,
-            "properties": properties,
-            "overall": {
-                "level": overall_level,
-                "classification": protocol.replace("_", " "),
-                "explanation": f"API Composition: {api_result.get('diagnostics', {}).get('composition_breakdown', {})}"
-            },
-            "original_image": original_base64,
-            "annotated_image": annotated_base64
+    if os.path.exists(temp_path): os.remove(temp_path)
+    
+    return {
+        "scan_id": scan_id,
+        "mode": "Dual-Model Pipeline (YOLOv8 + RF)",
+        "bboxes": bboxes,
+        "properties": properties,
+        "overall": {
+            "level": overall_level,
+            "classification": "Threat Detected" if overall_level != "SAFE" else "Clear",
+            "explanation": f"Integrated Model 1 & 2 Diagnostics: {json.dumps(api_result.get('diagnostics', {}))}"
         }
+    }
+
+@router.post("/scan")
+async def scan_image(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Receives an image, calls Model 1 (XRayAPI), evaluates properties with Model 2, and maps to UI format."""
+    try:
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        results = predict_image(img, db)
+        
+        annotated_img = img.copy()
+        for bbox in results["bboxes"]:
+            x1, y1, x2, y2 = bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]
+            color = (0, 0, 255) if bbox["threat_level"] == "CRITICAL" else ((0, 165, 255) if bbox["threat_level"] == "WARNING" else (0, 200, 0))
+            cv2.rectangle(annotated_img, (x1, y1), (x2, y2), color, 3)
+            lbl = f"#{bbox['id']+1} {bbox['material'].upper()}"
+            cv2.putText(annotated_img, lbl, (x1, max(y1 - 10, 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            
+        results["original_image"] = mat_to_base64_data_uri(img)
+        results["annotated_image"] = mat_to_base64_data_uri(annotated_img)
+        
+        return results
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference pipeline failure: {str(e)}")

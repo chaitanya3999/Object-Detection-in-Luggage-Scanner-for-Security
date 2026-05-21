@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from tip_projector import BeerLambertTIPProjector
 # We need the engine from inference router to keep singleton pattern, or initialize it.
 # Let's import it from inference router to reuse it, or instantiate again (singleton is better).
-from routers.inference import engine, mat_to_base64_data_uri
+from routers.inference import predict_image, mat_to_base64_data_uri
 
 router = APIRouter(prefix="/api")
 
@@ -54,7 +54,7 @@ async def threat_image_projection(
         )
         
         # Run inference on the PROJECTED suitcase
-        results = engine.predict(projected_img)
+        results = predict_image(projected_img, db_session=None)
         
         # Annotate
         annotated_img = projected_img.copy()
