@@ -93,10 +93,6 @@ class PropertyYOLO(nn.Module):
         import ultralytics, yaml
         from pathlib import Path
         
-        if input_channels == 3:
-            self.yolo = YOLO(f"{model_size}.pt" if pretrained else f"{model_size}.yaml")
-            return
-
         yaml_path = Path(ultralytics.__file__).parent / "cfg" / "models" / "v8" / "yolov8.yaml"
         custom_yaml_path = f"custom_4ch_{model_size}.yaml"
         if yaml_path.exists():
@@ -105,7 +101,6 @@ class PropertyYOLO(nn.Module):
             with open(custom_yaml_path, "w") as f: yaml.dump(d, f)
             self.yolo = YOLO(custom_yaml_path)
             
-        # ✅ THE MISSING LINE: Actually load the weights if provided!
         if pretrained and weights_path:
             self.yolo.load(weights_path)
 
