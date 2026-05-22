@@ -39,3 +39,15 @@ Thumbs.db
 *.env
 venv/
 .venv/
+__pycache__/
+
+# Node/React Dependencies
+node_modules/
+frontend/node_modules/
+
+# Massive Image Datasets
+dataset/
+backend/assets/dataset/
+
+# Database
+backend/scans.db
