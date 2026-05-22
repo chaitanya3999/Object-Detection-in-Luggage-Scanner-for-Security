@@ -2,7 +2,36 @@ import cv2
 import json
 import torch
 import os
+import numpy as np
 from src.model1.architecture import PropertyYOLO
+
+def calculate_cv2_properties(image, bbox):
+    x1, y1, x2, y2 = [int(v) for v in bbox]
+    h, w = image.shape[:2]
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(w, x2), min(h, y2)
+    
+    crop = image[y1:y2, x1:x2]
+    if crop.size == 0:
+        return 0.0, 0.0, 0.0, 0
+        
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    
+    mean_val = np.mean(gray)
+    absorption = float(max(0.0, min(1.0, 1.0 - (mean_val / 255.0))))
+    
+    std_val = np.std(gray)
+    homogeneity = float(max(0.0, min(1.0, 1.0 - (std_val / 128.0))))
+    
+    total_pixels = gray.size
+    non_bg_pixels = np.sum(gray < 245)
+    volume = float(non_bg_pixels / total_pixels) if total_pixels > 0 else 0.0
+    
+    edges = cv2.Canny(gray, 50, 150)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    edge_count = int(len(contours))
+    
+    return absorption, homogeneity, volume, edge_count
 
 class XRayAPI:
     def __init__(self, stage1_weights: str, stage2_weights: str, device: str = "cpu"):
@@ -112,18 +141,25 @@ class XRayAPI:
                 if severity_score > highest_severity:
                     highest_severity = severity_score
 
+                bbox_floats = [round(float(x), 1) for x in boxes_xyxy[i]]
+                cv2_absorption, cv2_homogeneity, cv2_volume, cv2_edge_count = calculate_cv2_properties(img, bbox_floats)
+
                 detection = {
                     "id": len(valid_detections) + 1,
                     "classification": threat_name.upper(),
                     "threat_severity_index": severity_score,
                     "confidence_score": round(conf_val, 3),
-                    "bounding_box": [round(float(x), 1) for x in boxes_xyxy[i]],
+                    "bounding_box": bbox_floats,
                     "physical_properties": {
                         "density_level": round(predicted_density, 3),
                         "edge_sharpness": round(float(prop[1]), 3),
                         "symmetry_score": round(float(prop[2]), 3),
                         "length_width_ratio": round(float(prop[3]), 3),
                         "curvature_index": round(float(prop[4]), 3),
+                        "approx_volume": round(cv2_volume, 3),
+                        "absorption_intensity": round(cv2_absorption, 3),
+                        "material_homogeneity": round(cv2_homogeneity, 3),
+                        "sharp_edge_count": cv2_edge_count,
                         "occlusion_score": round(float(prop[10]), 3)
                     },
                     "material_signature": material_label
