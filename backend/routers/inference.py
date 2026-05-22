@@ -10,9 +10,12 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 
-# Add root directory to sys.path to import api.py and backend.database
-root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, root_dir)
+# Define cross-platform dynamic paths
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__)) # e.g., backend/routers
+BACKEND_DIR = os.path.dirname(CURRENT_DIR) # e.g., backend/
+PROJECT_ROOT = os.path.dirname(BACKEND_DIR) # e.g., Root project folder
+
+sys.path.insert(0, PROJECT_ROOT)
 
 try:
     from backend.api import XRayAPI
@@ -25,10 +28,10 @@ from backend.database import get_db, ScanLog
 
 router = APIRouter(prefix="/api")
 
-# Initialize XRayAPI (Model 1) exactly ONCE globally on startup
+# Initialize Model 1 (XRayAPI) globally on startup
 print("Initializing Model 1 (XRayAPI) globally on startup...")
-stage1_path = os.path.join(root_dir, "checkpoints", "best.pt")
-stage2_path = os.path.join(root_dir, "checkpoints", "stage2_ultimate.pth")
+stage1_path = os.path.join(PROJECT_ROOT, "checkpoints", "best.pt")
+stage2_path = os.path.join(PROJECT_ROOT, "checkpoints", "stage2_ultimate.pth")
 
 try:
     if HAS_API:
@@ -40,9 +43,9 @@ except Exception as e:
     print(f"⚠ Failed to instantiate XRayAPI: {e}")
     api_engine = None
 
-# Initialize Model 2 (Random Forest) exactly ONCE globally on startup
+# Initialize Model 2 (Random Forest Classifier) globally...
 print("Initializing Model 2 (Random Forest Classifier) globally...")
-model2_path = os.path.join(root_dir, "checkpoints", "model2.joblib")
+model2_path = os.path.join(PROJECT_ROOT, "checkpoints", "model2.joblib")
 model2_payload = None
 try:
     if os.path.exists(model2_path):
@@ -178,7 +181,7 @@ def predict_image(img: np.ndarray, db_session: Session = None) -> dict:
         else:
             raise RuntimeError("XRayAPI Engine is not initialized and CV Fallback failed to load.")
         
-    temp_dir = os.path.join(root_dir, "backend", "temp")
+    temp_dir = os.path.join(PROJECT_ROOT, "backend", "temp")
     os.makedirs(temp_dir, exist_ok=True)
     temp_path = os.path.join(temp_dir, "temp_inference.jpg")
     cv2.imwrite(temp_path, img)
@@ -209,10 +212,10 @@ def predict_image(img: np.ndarray, db_session: Session = None) -> dict:
             "curvature_index": props.get("curvature_index", 0.0),
             "occlusion_score": props.get("occlusion_score", 0.0),
             "material_category": 1 if "metal" in det["material_signature"].lower() else 0,
-            "approximate_volume": 0.0,
-            "avg_absorption_intensity": 0.0,
-            "material_homogeneity": 0.0,
-            "sharp_edge_count": 0
+            "approximate_volume": props.get("approx_volume", 0.0),
+            "avg_absorption_intensity": props.get("absorption_intensity", 0.0),
+            "material_homogeneity": props.get("material_homogeneity", 0.0),
+            "sharp_edge_count": props.get("sharp_edge_count", 0)
         }
         properties[str(i)] = mapped_props
         
@@ -261,10 +264,11 @@ def predict_image(img: np.ndarray, db_session: Session = None) -> dict:
         "mode": "Dual-Model Pipeline (YOLOv8 + RF)",
         "bboxes": bboxes,
         "properties": properties,
+        "diagnostics": api_result.get("diagnostics", {}),
         "overall": {
             "level": overall_level,
             "classification": "Threat Detected" if overall_level != "SAFE" else "Clear",
-            "explanation": f"Integrated Model 1 & 2 Diagnostics: {json.dumps(api_result.get('diagnostics', {}))}"
+            "explanation": "Integrated Model 1 & 2 Diagnostics processing complete."
         }
     }
 

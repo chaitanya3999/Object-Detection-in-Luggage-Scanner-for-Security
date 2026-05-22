@@ -223,7 +223,7 @@ class IncidentReportTemplate extends React.Component {
               ['Total Objects Detected', allBoxes.length],
               ['Critical Threats', threats.filter(t => t.threat_level === 'CRITICAL').length],
               ['Warning Alerts', threats.filter(t => t.threat_level === 'WARNING').length],
-              ['Checkpoint / Terminal', 'T4 - Alpha Gate'],
+              ['Checkpoint / Terminal', 'Terminal 1 - Security Lane 04'],
               ['Operator ID', 'SEC-A942'],
             ].map(([label, value]) => (
               <tr key={label}>
@@ -510,17 +510,11 @@ export default function ScannerTab({
             </div>
             <div className="metadata-item">
               <span className="metadata-label">Checkpoint</span>
-              <span className="metadata-value">T4 - Alpha Gate</span>
+              <span className="metadata-value">Terminal 1 - Security Lane 04</span>
             </div>
             <div className="metadata-item">
               <span className="metadata-label">Scan Time</span>
               <span className="metadata-value">{new Date().toLocaleTimeString()}</span>
-            </div>
-            <div className="metadata-item">
-              <span className="metadata-label">Engine Mode</span>
-              <span className="metadata-value" style={{ color: 'var(--accent-primary)' }}>
-                {manualScanResult ? (manualScanResult.mode.includes('Deep') ? 'DEEP LEARNING' : 'CV PIPELINE') : 'STANDBY'}
-              </span>
             </div>
             <div className="metadata-item">
               <span className="metadata-label">Objects Found</span>

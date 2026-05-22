@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import AlertLog from './components/AlertLog';
 import ScannerTab from './components/ScannerTab';
@@ -25,8 +25,12 @@ export default function App() {
 
   // Conveyor State
   const [isPlaying, setIsPlaying] = useState(false);
+  const [feedItems, setFeedItems] = useState([]);
   const [luggageQueue, setLuggageQueue] = useState([]);
   const [selectedBag, setSelectedBag] = useState(null);
+  const [conveyorScanResult, setConveyorScanResult] = useState(null);
+  const [conveyorLoading, setConveyorLoading] = useState(false);
+  const [conveyorSelectedBoxId, setConveyorSelectedBoxId] = useState(null);
 
   // TIP State
   const [tipBgType, setTipBgType] = useState('safe_luggage');
@@ -50,6 +54,21 @@ export default function App() {
     { id: 'water_bottle', name: 'Water Bottle (Dense Organic)' }
   ];
 
+  // ── Helpers ──────────────────────────────────────
+  const b64toBlob = (b64Data, contentType = '', sliceSize = 512) => {
+    const byteCharacters = atob(b64Data);
+    const byteArrays = [];
+    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+      const slice = byteCharacters.slice(offset, offset + sliceSize);
+      const byteNumbers = new Array(slice.length);
+      for (let i = 0; i < slice.length; i++) {
+        byteNumbers[i] = slice.charCodeAt(i);
+      }
+      byteArrays.push(new Uint8Array(byteNumbers));
+    }
+    return new Blob(byteArrays, { type: contentType });
+  };
+
   // Fetch Status
   useEffect(() => {
     fetch('/api/model-status')
@@ -61,38 +80,82 @@ export default function App() {
   // Fetch Analytics
   useEffect(() => {
     if (activeTab === 'analytics' && !analyticsData) {
-      fetch('/api/analytics')
-        .then(res => res.json())
-        .then(data => setAnalyticsData(data))
+      Promise.all([
+        fetch('/api/mock-analytics').then(r => r.json()),
+        fetch('/api/stats').then(r => r.json())
+      ])
+        .then(([modelData, statsData]) => setAnalyticsData({ ...modelData, stats: statsData }))
         .catch(err => console.error(err));
     }
   }, [activeTab]);
 
-  // Conveyor Simulator
+  // Conveyor: Fetch Feed on Mount
+  useEffect(() => {
+    fetch('/api/feed')
+      .then(res => res.json())
+      .then(data => {
+        setFeedItems(data);
+      })
+      .catch(err => console.error('Error loading luggage feed:', err));
+  }, []);
+
+  // Conveyor: Auto-Push when Playing
   useEffect(() => {
     let interval;
-    if (isPlaying) {
+    if (isPlaying && feedItems.length > 0) {
       interval = setInterval(() => {
-        const id = Math.random().toString(36).substring(7);
-        const newBag = { id, timestamp: Date.now(), result: null };
-        setLuggageQueue(prev => [newBag, ...prev].slice(0, 10));
+        const nextBagTemplate = feedItems[Math.floor(Math.random() * feedItems.length)];
+        const newBag = { ...nextBagTemplate, id: Date.now().toString() + Math.random().toString().substring(2,6) };
         
-        // Simulate scan delay
-        setTimeout(() => {
-          fetch('/api/analytics') // Using analytics as a dummy ping to simulate activity if no real stream exists
-            .then(() => {
-              setLuggageQueue(prev => prev.map(b => 
-                b.id === id ? { ...b, result: { 
-                  overall: { level: Math.random() > 0.8 ? 'CRITICAL' : 'SAFE', explanation: 'Auto-scanned.' },
-                  bboxes: [] 
-                }} : b
-              ));
-            });
-        }, 1500);
+        setLuggageQueue(prev => {
+          const nextQueue = [...prev, newBag];
+          return nextQueue.length > 10 ? nextQueue.slice(-10) : nextQueue;
+        });
+        
+        handleSelectBag(newBag);
       }, 3000);
     }
     return () => clearInterval(interval);
-  }, [isPlaying]);
+  }, [isPlaying, feedItems]);
+
+  // Conveyor: Select Bag & Run Real Scan
+  const handleSelectBag = useCallback((bag) => {
+    setSelectedBag(bag);
+    setConveyorLoading(true);
+    setConveyorScanResult(null);
+    setConveyorSelectedBoxId(null);
+
+    fetch(`/api/feed/image/${bag.mock_type}`)
+      .then(res => res.json())
+      .then(imgData => {
+        const base64Content = imgData.image.split(',')[1];
+        const blob = b64toBlob(base64Content, 'image/jpeg');
+        const file = new File([blob], `${bag.mock_type}.jpg`, { type: 'image/jpeg' });
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        return fetch('/api/scan', {
+          method: 'POST',
+          body: formData
+        });
+      })
+      .then(res => res.json())
+      .then(scanData => {
+        setConveyorScanResult(scanData);
+        setConveyorLoading(false);
+        setConveyorSelectedBoxId(scanData.bboxes && scanData.bboxes.length > 0 ? 0 : null);
+        
+        // Update the bag in the queue with the real AI results
+        setLuggageQueue(prev => 
+          prev.map(item => item.id === bag.id ? { ...item, result: scanData } : item)
+        );
+      })
+      .catch(err => {
+        console.error('Error scanning bag:', err);
+        setConveyorLoading(false);
+      });
+  }, []);
 
   const handleRunTIP = () => {
     setTipLoading(true);
@@ -115,6 +178,9 @@ export default function App() {
     .then(data => {
       setTipResult(data);
       setTipLoading(false);
+      if (data.scan_results && data.scan_results.bboxes && data.scan_results.bboxes.length > 0) {
+        setTipSelectedBoxId(0);
+      }
     })
     .catch(err => {
       console.error(err);
@@ -126,7 +192,7 @@ export default function App() {
     <div className="layout-container">
       <Toaster theme="dark" position="top-right" />
       
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} modelStatus={modelStatus} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} modelStatus={modelStatus} scanResult={manualScanResult} />
       
       <main className="main-content">
         {activeTab === 'manual' && (
@@ -145,9 +211,9 @@ export default function App() {
           <ConveyorTab 
             isPlaying={isPlaying} setIsPlaying={setIsPlaying}
             luggageQueue={luggageQueue} selectedBag={selectedBag}
-            scanResult={selectedBag?.result} scanLoading={false}
-            selectedBoxId={selectedBoxId} setSelectedBoxId={setSelectedBoxId}
-            handleSelectBag={setSelectedBag}
+            scanResult={conveyorScanResult} scanLoading={conveyorLoading}
+            selectedBoxId={conveyorSelectedBoxId} setSelectedBoxId={setConveyorSelectedBoxId}
+            handleSelectBag={handleSelectBag}
           />
         )}
 

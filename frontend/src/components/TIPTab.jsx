@@ -9,6 +9,12 @@ export default function TIPTab({
   tipHoveredBoxId, setTipHoveredBoxId, tipSelectedBoxId, setTipSelectedBoxId,
   threatPresets, handleRunTIP, tipImgRef
 }) {
+  const ensureDataUri = (src) => {
+    if (!src) return null;
+    if (src.startsWith('data:')) return src;
+    return `data:image/jpeg;base64,${src}`;
+  };
+
   return (
     <div className="animate-fadeIn" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%' }}>
       <h2 className="section-title">
@@ -22,30 +28,16 @@ export default function TIPTab({
         <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', overflowY: 'auto' }}>
           <div>
             <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'block' }}>Background Image</label>
-            <select 
-              value={tipBgType} 
-              onChange={e => setTipBgType(e.target.value)}
-              style={{ width: '100%', padding: '0.6rem', borderRadius: 'var(--radius-sm)', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
-            >
-              <option value="safe_luggage">Safe Luggage</option>
-              <option value="knife_bag">Luggage with Knife</option>
-              <option value="toolbox">Toolbox</option>
-              <option value="aerosol_bag">Bag with Aerosol</option>
-              <option value="shielded_bag">Heavily Shielded Bag</option>
-            </select>
+            <div style={{ width: '100%', padding: '0.6rem', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-primary)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Layers size={14} color="var(--text-secondary)" /> Random Safe X-Ray (Dataset)
+            </div>
           </div>
 
           <div>
             <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'block' }}>Threat Preset</label>
-            <select 
-              value={tipThreatType} 
-              onChange={e => setTipThreatType(e.target.value)}
-              style={{ width: '100%', padding: '0.6rem', borderRadius: 'var(--radius-sm)', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
-            >
-              {threatPresets.map(t => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+            <div style={{ width: '100%', padding: '0.6rem', borderRadius: 'var(--radius-sm)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: 'var(--color-critical)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Compass size={14} color="var(--color-critical)" /> Random Threat X-Ray (Dataset)
+            </div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -104,7 +96,7 @@ export default function TIPTab({
               <>
                 <img 
                   ref={tipImgRef}
-                  src={tipResult.composite_image} 
+                  src={ensureDataUri(tipResult.composite_image)} 
                   alt="TIP Result" 
                   style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} 
                 />

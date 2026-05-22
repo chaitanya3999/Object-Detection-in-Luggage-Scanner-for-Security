@@ -4,7 +4,7 @@ import {
   BarChart3, Settings, HelpCircle, User, CheckCircle2, Info 
 } from 'lucide-react';
 
-export default function Sidebar({ activeTab, setActiveTab, modelStatus }) {
+export default function Sidebar({ activeTab, setActiveTab, modelStatus, scanResult }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -41,30 +41,38 @@ export default function Sidebar({ activeTab, setActiveTab, modelStatus }) {
         </div>
       </nav>
 
-      {modelStatus && (
-        <div className="system-status">
-          <div className="system-status-title">
-            <span>Engine Status</span>
-            {modelStatus.checkpoint_found ? <CheckCircle2 size={14} color="var(--color-safe)" /> : <Info size={14} color="var(--color-warning)" />}
-          </div>
-          <div className="status-row">
-            <span>Mode:</span>
-            <span className={`status-value ${modelStatus.is_dl_mode ? 'active' : 'fallback'}`}>
-              {modelStatus.is_dl_mode ? 'DEEP LEARNING' : 'CV FALLBACK'}
-            </span>
-          </div>
-          <div className="status-row">
-            <span>Model 2:</span>
-            <span className={`status-value ${modelStatus.model2_found ? 'active' : 'fallback'}`}>
-              {modelStatus.model2_found ? 'LOADED (RF)' : 'HEURISTICS'}
-            </span>
-          </div>
-          <div className="status-row">
-            <span>Device:</span>
-            <span className="status-value">{modelStatus.device?.toUpperCase()}</span>
-          </div>
+      <div className="system-status threat-composition-widget" style={{ marginTop: 'auto', marginBottom: '1rem', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="system-status-title" style={{ marginBottom: '0.8rem' }}>
+          <span>Threat Composition</span>
+          <CheckCircle2 size={14} color="var(--color-safe)" />
         </div>
-      )}
+        
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+          {[
+            { label: 'Heavy Metal', key: 'Heavy/Dense Metal', color: '#ef4444' },
+            { label: 'Light Metal', key: 'Light Metal', color: '#3b82f6' },
+            { label: 'Fabric/Plastic', key: 'Fabric/Plastic', color: '#22c55e' },
+            { label: 'Organic', key: 'Organic', color: '#f59e0b' }
+          ].map(mat => {
+            const valStr = scanResult?.diagnostics?.composition_breakdown?.[mat.key] || '0%';
+            const pct = parseFloat(valStr) || 0;
+            return (
+              <div key={mat.label} className="composition-row" style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="comp-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <div className="comp-dot" style={{ width: '8px', height: '8px', borderRadius: '50%', background: mat.color }}></div>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{mat.label}</span>
+                  </div>
+                  <span className="comp-value" style={{ fontSize: '0.75rem', fontWeight: 700, color: mat.color }}>{valStr}</span>
+                </div>
+                <div style={{ height: '4px', background: 'rgba(255,255,255,0.08)', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ width: `${pct}%`, height: '100%', background: mat.color, transition: 'width 0.5s ease' }}></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="sidebar-footer">
         <button className="icon-btn"><Settings size={18} /></button>

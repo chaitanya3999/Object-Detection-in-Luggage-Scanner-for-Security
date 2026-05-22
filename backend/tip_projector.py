@@ -18,116 +18,123 @@ class BeerLambertTIPProjector:
         fg_image: np.ndarray,
         scale: float = 1.0,
         angle_deg: float = 0.0,
-        pos_x_pct: float = 50.0,  # 0 to 100% of bg width
-        pos_y_pct: float = 50.0,  # 0 to 100% of bg height
-        thickness: float = 1.0,   # Attenuation multiplier
+        pos_x_pct: float = 50.0,
+        pos_y_pct: float = 50.0,
+        thickness: float = 1.0,
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
-        Overlays the threat image fg_image onto bg_image.
+        Overlays the threat image fg_image onto bg_image using strict alpha masking.
         
-        Args:
-            bg_image: BGR suitcase image.
-            fg_image: BGR threat item image (should have a light/white background).
-            scale: Scaling factor for fg_image.
-            angle_deg: Rotation angle in degrees.
-            pos_x_pct: Center position X percentage (0-100).
-            pos_y_pct: Center position Y percentage (0-100).
-            thickness: Beer-Lambert attenuation multiplier (1.0 = normal, < 1 = thinner, > 1 = denser).
-            
-        Returns:
-            - projected_image: Attenuated BGR result.
-            - bbox: Coordinates of the projected item [x1, y1, x2, y2].
+        Pipeline:
+          1. Threshold → binary mask isolating object from white/black bg
+          2. Crop to object bounding rect
+          3. Resize threat + mask (mask uses INTER_NEAREST to stay binary)
+          4. Rotate threat + mask (mask padded with 0, re-thresholded after)
+          5. Beer-Lambert blend ONLY where mask > 0
         """
         bg_h, bg_w = bg_image.shape[:2]
-        
-        # 1. Isolate the threat object from its white background
+
+        # ── Step 1: Create binary mask BEFORE any transforms ──────────
         fg_gray = cv2.cvtColor(fg_image, cv2.COLOR_BGR2GRAY)
-        # Background is white, so the object is darker (< 240)
-        _, mask = cv2.threshold(fg_gray, 240, 255, cv2.THRESH_BINARY_INV)
-        
-        # Crop to bounding box of threat to ease transformations
+
+        # Detect background color from the 4 corners
+        corners = [int(fg_gray[0, 0]), int(fg_gray[0, -1]),
+                    int(fg_gray[-1, 0]), int(fg_gray[-1, -1])]
+        avg_corner = np.mean(corners)
+
+        if avg_corner > 127:
+            # White background → object is darker
+            _, mask = cv2.threshold(fg_gray, 230, 255, cv2.THRESH_BINARY_INV)
+        else:
+            # Black background → object is brighter
+            _, mask = cv2.threshold(fg_gray, 25, 255, cv2.THRESH_BINARY)
+
+        # Morphological cleanup: erode to kill edge fuzz, dilate to restore shape
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        mask = cv2.erode(mask, kernel, iterations=1)
+        mask = cv2.dilate(mask, kernel, iterations=1)
+
+        # ── Step 2: Crop to tight bounding rect of the object ─────────
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
-            cnt = max(contours, key=cv2.contourArea)
-            tx, ty, tw, th = cv2.boundingRect(cnt)
+            # Use the union bounding rect of ALL contours, not just the largest
+            all_points = np.vstack(contours)
+            tx, ty, tw, th = cv2.boundingRect(all_points)
             cropped_fg = fg_image[ty:ty+th, tx:tx+tw]
             cropped_mask = mask[ty:ty+th, tx:tx+tw]
         else:
             cropped_fg = fg_image
             cropped_mask = mask
-            
-        # 2. Resize and rotate the threat and its mask
+
+        # ── Step 3: Resize threat + mask ──────────────────────────────
         orig_h, orig_w = cropped_fg.shape[:2]
-        # Target size relative to bg width
-        target_w = int(bg_w * 0.25 * scale)
-        target_h = int(orig_h * (target_w / max(orig_w, 1)))
-        target_w = max(target_w, 10)
-        target_h = max(target_h, 10)
-        
+        target_w = max(10, int(bg_w * 0.25 * scale))
+        target_h = max(10, int(orig_h * (target_w / max(orig_w, 1))))
+
         resized_fg = cv2.resize(cropped_fg, (target_w, target_h), interpolation=cv2.INTER_AREA)
-        resized_mask = cv2.resize(cropped_mask, (target_w, target_h), interpolation=cv2.INTER_AREA)
-        
-        # Rotate fg and mask
+        # INTER_NEAREST keeps the mask binary — no grey interpolation artifacts
+        resized_mask = cv2.resize(cropped_mask, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
+        # Re-threshold to guarantee binary after resize
+        _, resized_mask = cv2.threshold(resized_mask, 127, 255, cv2.THRESH_BINARY)
+
+        # ── Step 4: Rotate threat + mask ──────────────────────────────
         if angle_deg != 0:
-            resized_fg = self._rotate_image(resized_fg, angle_deg, bg_fill=(255, 255, 255))
+            # Rotate the threat image — pad with neutral gray (won't matter, mask gates it)
+            resized_fg = self._rotate_image(resized_fg, angle_deg, bg_fill=(128, 128, 128))
+            # Rotate the mask — pad with BLACK (0) so padding is never "active"
             resized_mask = self._rotate_image(resized_mask, angle_deg, bg_fill=0)
-            
+            # Re-threshold after rotation to kill any interpolation bleed
+            _, resized_mask = cv2.threshold(resized_mask, 127, 255, cv2.THRESH_BINARY)
+
         tf_h, tf_w = resized_fg.shape[:2]
-        
-        # 3. Compute target coordinates
+
+        # ── Step 5: Compute placement coordinates ─────────────────────
         center_x = int(bg_w * (pos_x_pct / 100.0))
         center_y = int(bg_h * (pos_y_pct / 100.0))
-        
+
         x1 = center_x - tf_w // 2
         y1 = center_y - tf_h // 2
         x2 = x1 + tf_w
         y2 = y1 + tf_h
-        
-        # Clip coordinates within background image
+
+        # Clip to background bounds
         dx1, dy1 = max(0, x1), max(0, y1)
         dx2, dy2 = min(bg_w, x2), min(bg_h, y2)
-        
+
         sx1, sy1 = dx1 - x1, dy1 - y1
         sx2, sy2 = sx1 + (dx2 - dx1), sy1 + (dy2 - dy1)
-        
-        # Create output image
-        projected = bg_image.copy().astype(float)
-        
+
+        # ── Step 6: Beer-Lambert blend, strictly gated by mask ────────
+        projected = bg_image.copy().astype(np.float64)
+
         if (dx2 > dx1) and (dy2 > dy1):
-            # Extract local background region
             local_bg = projected[dy1:dy2, dx1:dx2]
-            
-            # Get matching threat and mask slices
-            local_fg = resized_fg[sy1:sy2, sx1:sx2].astype(float)
-            local_mask = resized_mask[sy1:sy2, sx1:sx2].astype(float) / 255.0
-            
-            # Apply thickness modifier to local threat intensity (attenuation strength)
-            # Normal: local_fg. Thickness increases absorption (makes it darker).
-            # Darker = closer to 0, which multiplies the background even more.
-            # I_attenuated = 255 - (255 - I_fg) * thickness
-            local_fg_attenuated = np.clip(255.0 - (255.0 - local_fg) * thickness, 0.0, 255.0)
-            
-            # Apply Beer-Lambert projection equation: I_final = I_bg * (I_fg / 255)
-            # Only apply this inside the mask region. Outside the mask, keep local background.
-            local_fg_ratio = local_fg_attenuated / 255.0
-            projected_region = local_bg * local_fg_ratio
-            
-            # Blend based on mask transparency to smooth edges
-            blend_mask = np.expand_dims(local_mask, axis=2)
-            blended_region = projected_region * blend_mask + local_bg * (1.0 - blend_mask)
-            
-            projected[dy1:dy2, dx1:dx2] = blended_region
-            
+            local_fg = resized_fg[sy1:sy2, sx1:sx2].astype(np.float64)
+            local_mask = resized_mask[sy1:sy2, sx1:sx2]
+
+            # Build a soft alpha from the binary mask (0.0 or 1.0)
+            alpha = (local_mask.astype(np.float64) / 255.0)[:, :, np.newaxis]  # (H, W, 1)
+
+            # Beer-Lambert attenuation with thickness modifier:
+            #   I_attenuated = 255 - (255 - I_fg) * thickness
+            #   I_final = I_bg * (I_attenuated / 255)
+            fg_attenuated = np.clip(255.0 - (255.0 - local_fg) * thickness, 0.0, 255.0)
+            fg_ratio = fg_attenuated / 255.0
+            beer_lambert_result = local_bg * fg_ratio
+
+            # np.where gated on alpha: only touch pixels where mask is active
+            blended = np.where(alpha > 0.5, beer_lambert_result, local_bg)
+            projected[dy1:dy2, dx1:dx2] = blended
+
         projected = np.clip(projected, 0, 255).astype(np.uint8)
-        
-        # Return projected BGR and the bounding box in absolute pixels
+
         bbox = {
             "x1": max(0, x1),
             "y1": max(0, y1),
             "x2": min(bg_w, x2),
             "y2": min(bg_h, y2)
         }
-        
+
         return projected, bbox
 
     def _rotate_image(self, image: np.ndarray, angle: float, bg_fill: Any = 0) -> np.ndarray:
