@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # 🛡️ X-Ray Sentry: Dual-Model Deep Property Analyzer
 
@@ -47,36 +47,36 @@ The system also implements a **Threat Image Projection (TIP) Sandbox** — a rea
 
 ## 🏗️ System Architecture
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────┐
-│                        CLIENT (React 18 + Vite)                     │
-│  ┌────────────┐ ┌──────────────┐ ┌────────────┐ ┌───────────────┐   │
-│  │ ScannerTab │ │ ConveyorTab  │ │  TIP Tab   │ │ AnalyticsTab  │   │
-│  │ (Manual)   │ │ (Live Feed)  │ │ (Sandbox)  │ │ (Recharts)    │   │
-│  └─────┬──────┘ └──────┬───────┘ └─────┬──────┘ └───────┬───────┘   │
-│        │               │               │                │           │
-│        └───────────────┼───────────────┼────────────────┘           │
-│                        │  HTTP / JSON  │                            │
-├────────────────────────┼───────────────┼────────────────────────────┤
-│                   FASTAPI BACKEND (Uvicorn)                         │
-│  ┌─────────────────────┴───────────────┴────────────────────────┐   │
-│  │                    routers/inference.py                       │   │
-│  │         POST /api/scan  ·  GET /api/feed  ·  GET /api/stats  │   │
-│  └───────────────────────────┬──────────────────────────────────┘   │
-│                              │                                      │
-│  ┌───────────────────────────┴──────────────────────────────────┐   │
-│  │                         api.py                               │   │
-│  │  ┌─────────────────┐  ┌──────────────┐  ┌────────────────┐  │   │
-│  │  │  Stage 1: YOLO  │→ │  Stage 2: CV │→ │ Stage 3: RF    │  │   │
-│  │  │  PropertyYOLO   │  │  Physics     │  │ Classifier     │  │   │
-│  │  │  (best.pt)      │  │  Overrides   │  │ (model2.joblib)│  │   │
-│  │  └─────────────────┘  └──────────────┘  └────────────────┘  │   │
-│  └──────────────────────────────────────────────────────────────┘   │
+│                        CLIENT (React 18 + Vite)                      │
+│  ┌────────────┐ ┌──────────────┐ ┌────────────┐ ┌───────────────┐    │
+│  │ ScannerTab │ │ ConveyorTab  │ │  TIP Tab   │ │ AnalyticsTab  │    │
+│  │ (Manual)   │ │ (Live Feed)  │ │ (Sandbox)  │ │ (Recharts)    │    │
+│  └─────┬──────┘ └──────┬───────┘ └─────┬──────┘ └───────┬───────┘    │
+│        │               │               │                │            │
+│        └───────────────┼───────────────┼────────────────┘            │
+│                        │  HTTP / JSON  │                             │
+├────────────────────────┼───────────────┼─────────────────────────────┤
+│                   FASTAPI BACKEND (Uvicorn)                          │
+│  ┌─────────────────────┴───────────────┴─────────────────────────┐   │
+│  │                    routers/inference.py                        │   │
+│  │         POST /api/scan  ·  GET /api/feed  ·  GET /api/stats   │   │
+│  └───────────────────────────┬───────────────────────────────────┘   │
+│                              │                                       │
+│  ┌───────────────────────────┴───────────────────────────────────┐   │
+│  │                            api.py                             │   │
+│  │  ┌─────────────────┐  ┌──────────────┐  ┌────────────────┐    │   │
+│  │  │  Stage 1: YOLO  │→ │  Stage 2: CV │→ │ Stage 3: RF    │    │   │
+│  │  │  PropertyYOLO   │  │  Physics     │  │ Classifier     │    │   │
+│  │  │  (best.pt)      │  │  Overrides   │  │ (model2.joblib)│    │   │
+│  │  └─────────────────┘  └──────────────┘  └────────────────┘    │   │
+│  └───────────────────────────────────────────────────────────────┘   │
 │                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                    tip_projector.py                           │   │
-│  │  Beer-Lambert TIP  ·  Alpha Masking  ·  Affine Transforms   │   │
-│  └──────────────────────────────────────────────────────────────┘   │
+│  ┌───────────────────────────────────────────────────────────────┐   │
+│  │                    tip_projector.py                            │   │
+│  │  Beer-Lambert TIP  ·  Alpha Masking  ·  Affine Transforms     │   │
+│  └───────────────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -99,7 +99,7 @@ The system also implements a **Threat Image Projection (TIP) Sandbox** — a rea
 
 ## 📁 Project Structure
 
-```
+```text
 X-Ray-Sentry/
 │
 ├── backend/                          # FastAPI application server
@@ -167,7 +167,7 @@ The inference pipeline in [`api.py`](backend/api.py) orchestrates three sequenti
 
 The [`PropertyYOLO`](src/model1/architecture.py) architecture extends a standard **YOLOv8m** detection backbone with a custom **ROI-Aligned Property Regression Head**.
 
-```
+```text
 Input X-Ray Image (640×640×3)
         │
         ▼
@@ -187,8 +187,8 @@ Input X-Ray Image (640×640×3)
 │  (stage2_ultimate.pth)       │
 │                              │  [0] density_level        [6] approx_volume
 │  FC(channels → 256) → ReLU  │  [1] edge_sharpness       [7] absorption_intensity
-│  FC(256 → 128) → ReLU       │  [2] symmetry_score        [8] material_homogeneity
-│  FC(128 → 11)               │  [3] length_width_ratio    [9] sharp_edge_count
+│  FC(256 → 128) → ReLU       │  [2] symmetry_score       [8] material_homogeneity
+│  FC(128 → 11)               │  [3] length_width_ratio   [9] sharp_edge_count
 │                              │  [4] curvature_index      [10] occlusion_score
 │                              │  [5] (reserved)
 └──────────────────────────────┘
@@ -235,13 +235,13 @@ Threat Image Projection is a **real-world aviation security protocol** (mandated
 
 Our implementation in [`tip_projector.py`](backend/tip_projector.py) uses the **Beer-Lambert Law of X-Ray Attenuation**:
 
-```
+```text
 I_final = I_background × (I_threat_attenuated / 255)
 ```
 
 Where attenuation is modulated by a user-controlled thickness parameter:
 
-```
+```text
 I_attenuated = 255 − (255 − I_threat) × thickness
 ```
 
@@ -269,23 +269,27 @@ The TIP Sandbox and Conveyor Feed use `os.listdir()` with `random.choice()` to d
 The React 18 frontend implements a premium **Apple Liquid-Glass** design system with glassmorphism panels, micro-animations, and a dark-mode-first color palette.
 
 ### Scanner Tab (Manual Analysis)
+
 - Drag-and-drop X-ray upload with real-time inference.
 - **Deep Property Analyzer**: Maps the 11-dimensional physics vector to animated progress bars.
 - Interactive bounding box overlays with per-object detail expansion.
 - **PDF Incident Report Generation**: One-click professional threat assessment export.
 
 ### Conveyor Tab (Live Simulation)
+
 - Asynchronous simulation loop mimicking a real airport conveyor belt.
 - Bags are queued every **3 seconds** (when playing) with `Pending` status.
 - Each bag is sent to the backend for real AI inference; the queue updates asynchronously once the JSON response resolves.
 - Maximum queue depth of 10 bags with FIFO eviction.
 
 ### TIP Sandbox Tab
+
 - Physics parameter sliders: **Scale**, **Angle**, **Position X/Y**, **Material Thickness** (Beer-Lambert).
 - Read-only dataset badges indicating random selection from the local YOLO test split.
 - Real-time AI verification panel showing the projected composite's threat assessment.
 
 ### Analytics Dashboard
+
 - **5 Stat Cards**: Total Scans, mAP@50, Avg Inference Time, Threats Detected, False Positive Rate.
 - **7-Day Threat Stacked Area Chart**: Daily threat category breakdown.
 - **YOLO Capability Radar Chart**: Per-class detection accuracy (Gun/Knife/Wrench/Pliers/Scissors).
@@ -293,6 +297,7 @@ The React 18 frontend implements a premium **Apple Liquid-Glass** design system 
 - **Random Forest Feature Importance**: Horizontal bar chart of the 11-property importance ranking.
 
 ### Sidebar
+
 - System status indicator with live model health.
 - **Threat Composition Widget**: Persistent across all tabs, showing real-time material breakdown (Heavy Metal / Light Metal / Fabric-Plastic / Organic) with animated CSS progress bars.
 
@@ -313,7 +318,7 @@ The React 18 frontend implements a premium **Apple Liquid-Glass** design system 
 ### Option A: One-Click Launch (Windows)
 
 ```batch
-# Double-click or run from terminal:
+:: Double-click or run from terminal:
 start_scanner.bat
 ```
 
@@ -322,6 +327,7 @@ This script automatically boots the FastAPI backend, the Vite dev server, and op
 ### Option B: Manual Launch (macOS / Linux / Windows)
 
 **Terminal 1 — Backend:**
+
 ```bash
 # Create and activate virtual environment
 python -m venv venv
@@ -338,6 +344,7 @@ uvicorn main:app --reload --port 8000
 ```
 
 **Terminal 2 — Frontend:**
+
 ```bash
 cd frontend
 npm install
@@ -453,4 +460,3 @@ THREATS_DIR = os.path.join(PROJECT_ROOT, "dataset", "splits", "test", "images")
 *Built with ⚡ by the X-Ray Sentry Research Team*
 
 </div>
-]]>
